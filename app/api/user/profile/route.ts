@@ -50,6 +50,12 @@ export async function PUT(request: NextRequest) {
     })
   } catch (error) {
     console.error("Profile update error:", error)
-    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Internal server error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      },
+      { status: 500 },
+    )
   }
 }

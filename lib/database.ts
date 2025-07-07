@@ -36,6 +36,10 @@ export const userQueries = {
     business_name?: string
     email_verification_token?: string
   }) => {
+    // Get the free plan ID first
+    const freePlan = await sql`SELECT id FROM plans WHERE name = 'Free' LIMIT 1`
+    const defaultPlanId = freePlan[0]?.id || null
+
     const result = await sql`
       INSERT INTO users (
         email, password_hash, first_name, last_name, plan_id, 
@@ -43,10 +47,10 @@ export const userQueries = {
       )
       VALUES (
         ${userData.email}, ${userData.password_hash}, ${userData.first_name}, 
-        ${userData.last_name}, ${userData.plan_id || null}, 
+        ${userData.last_name}, ${userData.plan_id || defaultPlanId}, 
         ${userData.business_name || null}, ${userData.email_verification_token || null}
       )
-      RETURNING id, email, first_name, last_name, role, is_email_verified
+      RETURNING id, email, first_name, last_name, role, is_email_verified, business_name
     `
     return result[0]
   },
@@ -106,9 +110,14 @@ export const sessionQueries = {
 
   findByToken: async (sessionToken: string) => {
     const result = await sql`
-      SELECT s.*, u.id as user_id, u.email, u.role, u.is_email_verified
+      SELECT 
+        s.*, 
+        u.id, u.email, u.first_name, u.last_name, u.role, u.is_email_verified,
+        u.business_name, u.business_address, u.phone, u.avatar_url, u.created_at,
+        p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
       FROM user_sessions s
       JOIN users u ON s.user_id = u.id
+      LEFT JOIN plans p ON u.plan_id = p.id
       WHERE s.session_token = ${sessionToken} 
         AND s.expires_at > CURRENT_TIMESTAMP
         AND u.is_active = true
