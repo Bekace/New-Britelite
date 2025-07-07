@@ -25,9 +25,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: 400 })
     }
 
-    // Send verification email with the actual token from the database
+    // Send verification email with the actual token from the registration
     if (result.user && result.verificationToken) {
-      await emailService.sendVerificationEmail(result.user.email, result.verificationToken, result.user.first_name)
+      const emailResult = await emailService.sendVerificationEmail(
+        result.user.email,
+        result.verificationToken,
+        result.user.first_name,
+      )
+
+      if (!emailResult.success) {
+        console.error("Failed to send verification email:", emailResult.error)
+        // Don't fail registration if email fails, but log it
+      }
     }
 
     return NextResponse.json(result)

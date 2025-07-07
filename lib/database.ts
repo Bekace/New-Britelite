@@ -61,6 +61,16 @@ export const userQueries = {
     return result[0] || null
   },
 
+  updateVerificationToken: async (email: string, token: string) => {
+    const result = await sql`
+      UPDATE users 
+      SET email_verification_token = ${token}, updated_at = CURRENT_TIMESTAMP
+      WHERE email = ${email}
+      RETURNING id, email
+    `
+    return result[0] || null
+  },
+
   setPasswordResetToken: async (email: string, token: string, expires: Date) => {
     const result = await sql`
       UPDATE users 

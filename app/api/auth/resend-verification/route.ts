@@ -24,12 +24,15 @@ export async function POST(request: NextRequest) {
     // Generate new verification token
     const newToken = tokenUtils.generateEmailToken()
 
-    // Update user with new token (you'll need to add this method to userQueries)
-    // For now, we'll use the existing token
-    const verificationToken = user.email_verification_token || newToken
+    // Update user with new token
+    await userQueries.updateVerificationToken(email, newToken)
 
-    // Send verification email
-    await emailService.sendVerificationEmail(user.email, verificationToken, user.first_name)
+    // Send verification email with new token
+    const emailResult = await emailService.sendVerificationEmail(user.email, newToken, user.first_name)
+
+    if (!emailResult.success) {
+      return NextResponse.json({ success: false, error: "Failed to send verification email" }, { status: 500 })
+    }
 
     return NextResponse.json({
       success: true,

@@ -13,9 +13,7 @@ export async function GET(request: NextRequest) {
     const result = await authService.verifyEmail(token)
 
     if (result.success) {
-      // Send welcome email after successful verification
-      // Note: We'll need to get user info to send welcome email
-      return NextResponse.json(result)
+      return NextResponse.json(result, { status: 200 })
     } else {
       return NextResponse.json(result, { status: 400 })
     }

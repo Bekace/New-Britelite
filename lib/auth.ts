@@ -179,6 +179,67 @@ export const authService = {
     }
   },
 
+  verifyEmail: async (token: string): Promise<AuthResult> => {
+    try {
+      if (!token) {
+        return { success: false, error: "Verification token is required" }
+      }
+
+      const user = await userQueries.updateEmailVerification(token)
+      if (!user) {
+        return { success: false, error: "Invalid or expired verification token" }
+      }
+
+      await auditQueries.log({
+        user_id: user.id,
+        action: "email_verified",
+        details: { email: user.email },
+      })
+
+      return {
+        success: true,
+        message: "Email verified successfully! You can now sign in to your account.",
+      }
+    } catch (error) {
+      console.error("Email verification error:", error)
+      return { success: false, error: "Email verification failed. Please try again." }
+    }
+  },
+
+  requestPasswordReset: async (email: string): Promise<AuthResult> => {
+    try {
+      const user = await userQueries.findByEmail(email)
+      if (!user) {
+        // Return success even if user doesn't exist for security
+        return { success: true, message: "If an account exists, a reset link has been sent." }
+      }
+
+      const resetToken = tokenUtils.generateEmailToken()
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+      await userQueries.setPasswordResetToken(email, resetToken, expiresAt)
+
+      await auditQueries.log({
+        user_id: user.id,
+        action: "password_reset_requested",
+        details: { email },
+      })
+
+      return { success: true, message: "Password reset link sent to your email." }
+    } catch (error) {
+      console.error("Password reset request error:", error)
+      return { success: false, error: "Failed to process password reset request." }
+    }
+  },
+
+  logout: async (sessionToken: string): Promise<void> => {
+    try {
+      await sessionQueries.delete(sessionToken)
+    } catch (error) {
+      console.error("Logout error:", error)
+    }
+  },
+
   verifySession: async (sessionToken: string): Promise<User | null> => {
     try {
       const session = await sessionQueries.findByToken(sessionToken)
