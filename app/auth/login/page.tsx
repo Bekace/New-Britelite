@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Monitor, AlertCircle } from "lucide-react"
+import { Eye, EyeOff, Monitor, AlertCircle, Mail } from "lucide-react"
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
@@ -20,12 +20,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [requiresVerification, setRequiresVerification] = useState(false)
+  const [isResendingVerification, setIsResendingVerification] = useState(false)
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError("")
+    setRequiresVerification(false)
 
     try {
       const response = await fetch("/api/auth/login", {
@@ -40,11 +43,37 @@ export default function LoginPage() {
         router.push("/dashboard")
       } else {
         setError(result.error || "Login failed")
+        if (result.requiresVerification) {
+          setRequiresVerification(true)
+        }
       }
     } catch (error) {
       setError("Network error. Please try again.")
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleResendVerification = async () => {
+    setIsResendingVerification(true)
+    try {
+      const response = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email }),
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        setError("Verification email sent! Please check your inbox.")
+        setRequiresVerification(false)
+      } else {
+        setError(result.error || "Failed to send verification email")
+      }
+    } catch (error) {
+      setError("Network error. Please try again.")
+    } finally {
+      setIsResendingVerification(false)
     }
   }
 
@@ -82,9 +111,26 @@ export default function LoginPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               {error && (
-                <Alert variant="destructive">
+                <Alert variant={requiresVerification ? "default" : "destructive"}>
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
+                  <AlertDescription>
+                    {error}
+                    {requiresVerification && (
+                      <div className="mt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleResendVerification}
+                          disabled={isResendingVerification}
+                          className="bg-transparent"
+                        >
+                          <Mail className="h-4 w-4 mr-2" />
+                          {isResendingVerification ? "Sending..." : "Resend Verification Email"}
+                        </Button>
+                      </div>
+                    )}
+                  </AlertDescription>
                 </Alert>
               )}
 

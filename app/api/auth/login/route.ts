@@ -17,6 +17,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: 401 })
     }
 
+    // Check if email is verified
+    if (result.user && !result.user.is_email_verified) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Please verify your email address before signing in. Check your inbox for the verification link.",
+          requiresVerification: true,
+        },
+        { status: 403 },
+      )
+    }
+
     // Set session cookie
     if (result.token) {
       const cookieStore = await cookies()

@@ -34,6 +34,7 @@ export interface AuthResult {
   token?: string
   message?: string
   error?: string
+  verificationToken?: string
 }
 
 export const passwordUtils = {
@@ -132,6 +133,7 @@ export const authService = {
       return {
         success: true,
         user: user as User,
+        verificationToken: emailVerificationToken,
         message: "Registration successful. Please check your email to verify your account.",
       }
     } catch (error) {

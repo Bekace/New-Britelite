@@ -25,13 +25,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: 400 })
     }
 
-    // Send verification email
-    if (result.user) {
-      await emailService.sendVerificationEmail(
-        result.user.email,
-        "verification-token", // In real implementation, get from user creation
-        result.user.first_name,
-      )
+    // Send verification email with the actual token from the database
+    if (result.user && result.verificationToken) {
+      await emailService.sendVerificationEmail(result.user.email, result.verificationToken, result.user.first_name)
     }
 
     return NextResponse.json(result)
