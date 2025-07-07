@@ -122,7 +122,10 @@ export default function ProfilePage() {
     return null
   }
 
-  const userInitials = `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`
+  const userInitials =
+    user?.first_name && user?.last_name
+      ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`
+      : user?.email?.charAt(0).toUpperCase() || "U"
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -143,7 +146,7 @@ export default function ProfilePage() {
             <div className="flex-1">
               <div className="flex items-center space-x-2">
                 <h2 className="text-2xl font-bold">
-                  {user.first_name} {user.last_name}
+                  {user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.email || "User"}
                 </h2>
                 {user.role === "admin" && (
                   <Badge variant="secondary">

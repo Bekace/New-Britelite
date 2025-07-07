@@ -190,7 +190,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     return null
   }
 
-  const userInitials = `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`
+  const userInitials =
+    user?.first_name && user?.last_name
+      ? `${user.first_name.charAt(0)}${user.last_name.charAt(0)}`
+      : user?.email?.charAt(0).toUpperCase() || "U"
   const allNavigationItems = user.role === "admin" ? [...navigationItems, ...adminItems] : navigationItems
 
   return (
@@ -243,7 +246,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     </Avatar>
                     <div className="flex flex-col items-start text-left">
                       <span className="text-sm font-medium">
-                        {user.first_name} {user.last_name}
+                        {user?.first_name && user?.last_name
+                          ? `${user.first_name} ${user.last_name}`
+                          : user?.email || "User"}
                       </span>
                       <span className="text-xs text-gray-500">{user.plan_name || "Free Plan"}</span>
                     </div>
