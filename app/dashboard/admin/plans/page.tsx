@@ -347,9 +347,15 @@ export default function AdminPlansPage() {
       )}
 
       <Tabs defaultValue="plans" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="plans">Plans</TabsTrigger>
-          <TabsTrigger value="features">Features</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="plans" className="flex items-center gap-2">
+            <CreditCard className="h-4 w-4" />
+            Plans ({plans.length})
+          </TabsTrigger>
+          <TabsTrigger value="features" className="flex items-center gap-2">
+            <Package className="h-4 w-4" />
+            Features ({features.length})
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="plans" className="space-y-6">
@@ -478,36 +484,6 @@ export default function AdminPlansPage() {
         </TabsContent>
 
         <TabsContent value="features" className="space-y-6">
-          {/* Debug Information */}
-          <Card className="border-orange-200 bg-orange-50">
-            <CardHeader>
-              <CardTitle className="text-orange-800">Debug Information</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 text-sm text-orange-700">
-                <p>
-                  <strong>Features loaded:</strong> {features.length}
-                </p>
-                <p>
-                  <strong>Features array:</strong> {JSON.stringify(features.slice(0, 2), null, 2)}
-                </p>
-                <p>
-                  <strong>API Status:</strong> Check browser console for detailed logs
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    console.log("Manual features refresh triggered")
-                    fetchFeatures()
-                  }}
-                >
-                  Refresh Features
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -525,19 +501,8 @@ export default function AdminPlansPage() {
               {features.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>No features found. This could mean:</p>
-                  <ul className="text-sm mt-2 space-y-1">
-                    <li>• Features haven't been added to the database yet</li>
-                    <li>• The API is not returning data correctly</li>
-                    <li>• There's a database connection issue</li>
-                  </ul>
-                  <Button
-                    className="mt-4"
-                    onClick={() => {
-                      console.log("Attempting to create first feature...")
-                      setIsCreateFeatureDialogOpen(true)
-                    }}
-                  >
+                  <p>No features found. Create your first feature to get started.</p>
+                  <Button className="mt-4" onClick={() => setIsCreateFeatureDialogOpen(true)}>
                     Create Your First Feature
                   </Button>
                 </div>
