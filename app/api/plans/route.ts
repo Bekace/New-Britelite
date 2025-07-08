@@ -5,8 +5,8 @@ export async function GET(request: NextRequest) {
   try {
     console.log("Fetching plans with features...")
 
-    // First try to fetch plans with features using the correct table structure
-    const plansWithFeatures = await sql`
+    // Fetch all active plans with their assigned features
+    const plans = await sql`
       SELECT 
         p.id, p.name, p.description, p.price, p.billing_cycle,
         p.max_screens, p.max_storage_gb, p.max_playlists,
@@ -14,21 +14,21 @@ export async function GET(request: NextRequest) {
         COALESCE(
           JSON_AGG(
             CASE 
-              WHEN f.id IS NOT NULL THEN 
+              WHEN pf.id IS NOT NULL AND pfa.is_enabled = true THEN 
                 JSON_BUILD_OBJECT(
-                  'id', f.id,
-                  'name', f.name,
-                  'description', f.description,
-                  'feature_key', f.feature_key
+                  'id', pf.id,
+                  'name', pf.name,
+                  'description', pf.description,
+                  'feature_key', pf.feature_key
                 )
               ELSE NULL 
             END
-          ) FILTER (WHERE f.id IS NOT NULL), 
+          ) FILTER (WHERE pf.id IS NOT NULL AND pfa.is_enabled = true), 
           '[]'::json
         ) as features
       FROM plans p
       LEFT JOIN plan_feature_assignments pfa ON p.id = pfa.plan_id AND pfa.is_enabled = true
-      LEFT JOIN features f ON pfa.feature_id = f.id AND f.is_active = true
+      LEFT JOIN plan_features pf ON pfa.feature_id = pf.id AND pf.is_active = true
       WHERE p.is_active = true 
       GROUP BY p.id, p.name, p.description, p.price, p.billing_cycle,
                p.max_screens, p.max_storage_gb, p.max_playlists,
@@ -36,14 +36,14 @@ export async function GET(request: NextRequest) {
       ORDER BY p.price ASC
     `
 
-    console.log("Plans with features fetched successfully:", plansWithFeatures.length)
+    console.log("Plans with features fetched successfully:", plans.length)
 
     return NextResponse.json({
       success: true,
-      plans: plansWithFeatures.map((plan) => ({
+      plans: plans.map((plan) => ({
         ...plan,
         price: Number.parseFloat(plan.price),
-        features: Array.isArray(plan.features) ? plan.features : [],
+        features: Array.isArray(plan.features) ? plan.features.filter((f) => f !== null) : [],
       })),
     })
   } catch (error) {
