@@ -69,6 +69,7 @@ export default function AdminUsersPage() {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const [deleteConfirmUser, setDeleteConfirmUser] = useState<AdminUser | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState("")
 
   useEffect(() => {
     fetchUsers()
@@ -141,6 +142,7 @@ export default function AdminUsersPage() {
         fetchUsers()
         setIsDeleteDialogOpen(false)
         setDeleteConfirmUser(null)
+        setDeleteConfirmText("")
       } else {
         setMessage({ type: "error", text: result.error || "Failed to delete user" })
       }
@@ -175,6 +177,8 @@ export default function AdminUsersPage() {
     }
     return user.email
   }
+
+  const isDeleteConfirmValid = deleteConfirmText.toLowerCase() === "delete"
 
   if (isLoading) {
     return (
@@ -354,6 +358,7 @@ export default function AdminUsersPage() {
                         onClick={() => {
                           setDeleteConfirmUser(user)
                           setIsDeleteDialogOpen(true)
+                          setDeleteConfirmText("")
                         }}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
@@ -452,12 +457,12 @@ export default function AdminUsersPage() {
           <DialogHeader>
             <DialogTitle>Delete User</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this user? This action cannot be undone and will permanently remove all
-              user data including screens, playlists, and media files.
+              This action cannot be undone. This will permanently delete the user account and all associated data
+              including screens, playlists, and media files.
             </DialogDescription>
           </DialogHeader>
           {deleteConfirmUser && (
-            <div className="py-4">
+            <div className="space-y-4">
               <div className="flex items-center space-x-3 p-3 bg-red-50 rounded-lg">
                 <Avatar className="h-10 w-10">
                   <AvatarFallback>{getUserInitials(deleteConfirmUser)}</AvatarFallback>
@@ -467,16 +472,36 @@ export default function AdminUsersPage() {
                   <p className="text-sm text-gray-600">{deleteConfirmUser.email}</p>
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="delete-confirm">
+                  To confirm deletion, type <strong>delete</strong> in the box below:
+                </Label>
+                <Input
+                  id="delete-confirm"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="Type 'delete' to confirm"
+                  className="font-mono"
+                />
+              </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false)
+                setDeleteConfirmText("")
+              }}
+            >
               Cancel
             </Button>
             <Button
               variant="destructive"
+              disabled={!isDeleteConfirmValid}
               onClick={() => {
-                if (deleteConfirmUser) {
+                if (deleteConfirmUser && isDeleteConfirmValid) {
                   handleDeleteUser(deleteConfirmUser.id)
                 }
               }}
