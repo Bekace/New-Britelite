@@ -8,6 +8,13 @@ import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CreditCard, Check, Star, Zap, BarChart3, Crown, AlertCircle, Calendar } from "lucide-react"
 
+interface Feature {
+  id: string
+  name: string
+  description: string
+  feature_key: string
+}
+
 interface Plan {
   id: string
   name: string
@@ -17,7 +24,7 @@ interface Plan {
   max_screens: number
   max_storage_gb: number
   max_playlists: number
-  features: string[]
+  features: Feature[]
   is_popular?: boolean
 }
 
@@ -38,7 +45,7 @@ export default function BillingPage() {
       try {
         setIsLoading(true)
 
-        // Fetch actual plans from the database
+        // Fetch actual plans from the database with their features
         const response = await fetch("/api/plans")
         if (!response.ok) {
           throw new Error("Failed to fetch plans")
@@ -56,27 +63,7 @@ export default function BillingPage() {
             max_screens: plan.max_screens,
             max_storage_gb: plan.max_storage_gb,
             max_playlists: plan.max_playlists,
-            features: [
-              `${plan.max_screens} Screen${plan.max_screens !== 1 ? "s" : ""}`,
-              `${plan.max_storage_gb}GB Storage`,
-              `${plan.max_playlists} Playlist${plan.max_playlists !== 1 ? "s" : ""}`,
-              ...(plan.name === "Free" ? ["Basic Support", "Standard Templates"] : []),
-              ...(plan.name === "Starter"
-                ? ["Real-time Updates", "Email Support", "Custom Branding", "Analytics Dashboard"]
-                : []),
-              ...(plan.name === "Professional"
-                ? ["Advanced Analytics", "Priority Support", "API Access", "Custom Integrations", "Team Collaboration"]
-                : []),
-              ...(plan.name === "Enterprise"
-                ? [
-                    "White-label Solution",
-                    "24/7 Phone Support",
-                    "Dedicated Account Manager",
-                    "Custom Development",
-                    "SLA Guarantee",
-                  ]
-                : []),
-            ],
+            features: plan.features || [],
             is_popular: plan.name === "Starter", // You can make this dynamic later
           }))
 
@@ -109,7 +96,7 @@ export default function BillingPage() {
             max_screens: 1,
             max_storage_gb: 1,
             max_playlists: 3,
-            features: ["1 Screen", "1GB Storage", "3 Playlists", "Basic Support", "Standard Templates"],
+            features: [],
           },
         ]
         setPlans(mockPlans)
@@ -138,6 +125,18 @@ export default function BillingPage() {
       default:
         return <Star className="h-5 w-5" />
     }
+  }
+
+  const formatPlanFeatures = (plan: Plan) => {
+    const baseFeatures = [
+      `${plan.max_screens} Screen${plan.max_screens !== 1 ? "s" : ""}`,
+      `${plan.max_storage_gb}GB Storage`,
+      `${plan.max_playlists} Playlist${plan.max_playlists !== 1 ? "s" : ""}`,
+    ]
+
+    const assignedFeatures = plan.features.map((feature) => feature.name)
+
+    return [...baseFeatures, ...assignedFeatures]
   }
 
   if (isLoading) {
@@ -181,7 +180,11 @@ export default function BillingPage() {
               </div>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold">{userPlan?.current_plan === "Free" ? "$0" : "$29.99"}</div>
+              <div className="text-2xl font-bold">
+                {plans.find((p) => p.name === userPlan?.current_plan)?.price === 0 || userPlan?.current_plan === "Free"
+                  ? "$0"
+                  : `$${plans.find((p) => p.name === userPlan?.current_plan)?.price || "0"}`}
+              </div>
               <div className="text-sm text-gray-500">per month</div>
             </div>
           </div>
@@ -237,13 +240,19 @@ export default function BillingPage() {
 
               <CardContent className="space-y-4">
                 <ul className="space-y-2">
-                  {plan.features.map((feature, index) => (
+                  {formatPlanFeatures(plan).map((feature, index) => (
                     <li key={index} className="flex items-center space-x-2 text-sm">
                       <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
                       <span>{feature}</span>
                     </li>
                   ))}
                 </ul>
+
+                {plan.features.length === 0 && plan.name !== "Free" && (
+                  <div className="text-sm text-gray-500 italic">
+                    No additional features assigned. Configure features in Plan Management.
+                  </div>
+                )}
 
                 <Button
                   className="w-full"
@@ -271,11 +280,11 @@ export default function BillingPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between py-3 border-b">
               <div>
-                <p className="font-medium">Free Plan</p>
+                <p className="font-medium">{userPlan?.current_plan} Plan</p>
                 <p className="text-sm text-gray-500">Started on {new Date().toLocaleDateString()}</p>
               </div>
               <div className="text-right">
-                <p className="font-medium">$0.00</p>
+                <p className="font-medium">${plans.find((p) => p.name === userPlan?.current_plan)?.price || "0.00"}</p>
                 <Badge variant="secondary">Active</Badge>
               </div>
             </div>
