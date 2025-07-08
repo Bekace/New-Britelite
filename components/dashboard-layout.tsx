@@ -121,6 +121,11 @@ const adminItems = [
         icon: Users,
       },
       {
+        title: "Plan Management",
+        url: "/dashboard/admin/plans",
+        icon: CreditCard,
+      },
+      {
         title: "System Settings",
         url: "/dashboard/admin/settings",
         icon: Shield,
@@ -300,7 +305,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
           <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span><strong>Welcome back, {user.first_name}!</strong></span>
+            <span>
+              <strong>Welcome back, {user.first_name}!</strong>
+            </span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="ghost" size="sm" asChild>

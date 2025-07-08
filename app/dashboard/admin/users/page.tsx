@@ -67,6 +67,8 @@ export default function AdminUsersPage() {
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<AdminUser | null>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
 
   useEffect(() => {
     fetchUsers()
@@ -124,6 +126,27 @@ export default function AdminUsersPage() {
 
   const handleToggleUserStatus = async (userId: string, isActive: boolean) => {
     await handleUpdateUser(userId, { is_active: !isActive })
+  }
+
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: "DELETE",
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setMessage({ type: "success", text: "User deleted successfully" })
+        fetchUsers()
+        setIsDeleteDialogOpen(false)
+        setDeleteConfirmUser(null)
+      } else {
+        setMessage({ type: "error", text: result.error || "Failed to delete user" })
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: "Network error. Please try again." })
+    }
   }
 
   const filteredUsers = users.filter((user) => {
@@ -326,7 +349,13 @@ export default function AdminUsersPage() {
                         )}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-red-600">
+                      <DropdownMenuItem
+                        className="text-red-600"
+                        onClick={() => {
+                          setDeleteConfirmUser(user)
+                          setIsDeleteDialogOpen(true)
+                        }}
+                      >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete User
                       </DropdownMenuItem>
@@ -412,6 +441,47 @@ export default function AdminUsersPage() {
               }}
             >
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete User</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this user? This action cannot be undone and will permanently remove all
+              user data including screens, playlists, and media files.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteConfirmUser && (
+            <div className="py-4">
+              <div className="flex items-center space-x-3 p-3 bg-red-50 rounded-lg">
+                <Avatar className="h-10 w-10">
+                  <AvatarFallback>{getUserInitials(deleteConfirmUser)}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-medium">{getUserDisplayName(deleteConfirmUser)}</p>
+                  <p className="text-sm text-gray-600">{deleteConfirmUser.email}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteConfirmUser) {
+                  handleDeleteUser(deleteConfirmUser.id)
+                }
+              }}
+            >
+              Delete User
             </Button>
           </DialogFooter>
         </DialogContent>

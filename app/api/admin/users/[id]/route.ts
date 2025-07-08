@@ -48,3 +48,67 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
   }
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const cookieStore = await cookies()
+    const sessionToken = cookieStore.get("session")?.value
+
+    if (!sessionToken) {
+      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
+    }
+
+    const user = await authService.verifySession(sessionToken)
+    if (!user || user.role !== "admin") {
+      return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
+    }
+
+    const userId = params.id
+
+    // Prevent admin from deleting themselves
+    if (user.id === userId) {
+      return NextResponse.json({ success: false, error: "You cannot delete your own account" }, { status: 400 })
+    }
+
+    // Start transaction to delete user and all related data
+    await sql.begin(async (sql) => {
+      // Delete user sessions
+      await sql`DELETE FROM user_sessions WHERE user_id = ${userId}`
+
+      // Delete audit logs
+      await sql`DELETE FROM audit_logs WHERE user_id = ${userId}`
+
+      // Delete screen playlist assignments for user's screens
+      await sql`
+        DELETE FROM screen_playlists 
+        WHERE screen_id IN (SELECT id FROM screens WHERE user_id = ${userId})
+      `
+
+      // Delete playlist items for user's playlists
+      await sql`
+        DELETE FROM playlist_items 
+        WHERE playlist_id IN (SELECT id FROM playlists WHERE user_id = ${userId})
+      `
+
+      // Delete playlists
+      await sql`DELETE FROM playlists WHERE user_id = ${userId}`
+
+      // Delete screens
+      await sql`DELETE FROM screens WHERE user_id = ${userId}`
+
+      // Delete media
+      await sql`DELETE FROM media WHERE user_id = ${userId}`
+
+      // Finally delete the user
+      await sql`DELETE FROM users WHERE id = ${userId}`
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: "User and all associated data deleted successfully",
+    })
+  } catch (error) {
+    console.error("Admin user deletion error:", error)
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
+  }
+}
