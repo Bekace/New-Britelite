@@ -119,10 +119,15 @@ export default function AdminPlansPage() {
 
   const fetchFeatures = async () => {
     try {
+      console.log("Fetching features...") // Debug log
       const response = await fetch("/api/admin/features")
+      console.log("Features response:", response.status) // Debug log
       if (response.ok) {
         const data = await response.json()
+        console.log("Features data:", data) // Debug log
         setFeatures(data.features || [])
+      } else {
+        console.error("Failed to fetch features:", response.status)
       }
     } catch (error) {
       console.error("Failed to fetch features:", error)
@@ -131,10 +136,14 @@ export default function AdminPlansPage() {
 
   const fetchPlanFeatures = async (planId: string) => {
     try {
+      console.log("Fetching plan features for plan:", planId) // Debug log
       const response = await fetch(`/api/admin/plans/${planId}/features`)
       if (response.ok) {
         const data = await response.json()
+        console.log("Plan features data:", data) // Debug log
         return data.features || []
+      } else {
+        console.error("Failed to fetch plan features:", response.status)
       }
     } catch (error) {
       console.error("Failed to fetch plan features:", error)
@@ -460,24 +469,41 @@ export default function AdminPlansPage() {
         <TabsContent value="features" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Available Features</CardTitle>
-              <CardDescription>Manage features that can be assigned to plans</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Available Features</CardTitle>
+                  <CardDescription>Manage features that can be assigned to plans</CardDescription>
+                </div>
+                <Button onClick={() => setIsCreateFeatureDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Feature
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {features.map((feature) => (
-                  <Card key={feature.id} className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium">{feature.name}</h3>
-                      <Badge variant={feature.is_active ? "default" : "secondary"}>
-                        {feature.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">{feature.description}</p>
-                    <p className="text-xs text-gray-500 font-mono">{feature.feature_key}</p>
-                  </Card>
-                ))}
-              </div>
+              {features.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>No features found. Create your first feature to get started.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {features.map((feature) => (
+                    <Card key={feature.id} className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-medium">{feature.name}</h3>
+                        <Badge variant={feature.is_active ? "default" : "secondary"}>
+                          {feature.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-2">{feature.description}</p>
+                      <p className="text-xs text-gray-500 font-mono bg-gray-100 px-2 py-1 rounded">
+                        {feature.feature_key}
+                      </p>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -730,28 +756,36 @@ export default function AdminPlansPage() {
           </DialogHeader>
           {selectedPlanForFeatures && (
             <div className="space-y-4 max-h-96 overflow-y-auto">
-              {features.map((feature) => {
-                const assignment = selectedPlanForFeatures.features?.find((f) => f.feature_id === feature.id)
-                const isEnabled = assignment?.is_enabled || false
+              {features.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No features available. Create features first in the Features tab.</p>
+                </div>
+              ) : (
+                features.map((feature) => {
+                  const assignment = selectedPlanForFeatures.features?.find((f) => f.feature_id === feature.id)
+                  const isEnabled = assignment?.is_enabled || false
 
-                return (
-                  <div key={feature.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                        <h4 className="font-medium">{feature.name}</h4>
-                        <Badge variant="outline" className="text-xs">
-                          {feature.feature_key}
-                        </Badge>
+                  return (
+                    <div key={feature.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-medium">{feature.name}</h4>
+                          <Badge variant="outline" className="text-xs">
+                            {feature.feature_key}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600">{feature.description}</p>
                       </div>
-                      <p className="text-sm text-gray-600">{feature.description}</p>
+                      <Switch
+                        checked={isEnabled}
+                        onCheckedChange={() =>
+                          handleTogglePlanFeature(selectedPlanForFeatures.id, feature.id, isEnabled)
+                        }
+                      />
                     </div>
-                    <Switch
-                      checked={isEnabled}
-                      onCheckedChange={() => handleTogglePlanFeature(selectedPlanForFeatures.id, feature.id, isEnabled)}
-                    />
-                  </div>
-                )
-              })}
+                  )
+                })
+              )}
             </div>
           )}
           <DialogFooter>

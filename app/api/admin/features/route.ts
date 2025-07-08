@@ -20,8 +20,11 @@ export async function GET(request: NextRequest) {
     // Fetch all plan features
     const features = await sql`
       SELECT * FROM plan_features
+      WHERE is_active = true
       ORDER BY name ASC
     `
+
+    console.log("Features fetched:", features) // Debug log
 
     return NextResponse.json({ success: true, features })
   } catch (error) {
