@@ -65,6 +65,8 @@ export default function HomePage() {
 
   const getPlanIcon = (planName: string) => {
     switch (planName.toLowerCase()) {
+      case "free":
+        return <Star className="h-5 w-5" />
       case "starter":
         return <Zap className="h-5 w-5" />
       case "professional":
@@ -273,7 +275,7 @@ export default function HomePage() {
                     </ul>
 
                     {plan.features.length === 0 && plan.name !== "Free" && (
-                      <div className="text-sm text-gray-500 italic">Contact us for custom features</div>
+                      <div className="text-sm text-gray-500 italic">Basic features included</div>
                     )}
 
                     <Link href="/auth/register">
