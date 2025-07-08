@@ -66,10 +66,19 @@ export default function AdminUsersPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const [deleteConfirmUser, setDeleteConfirmUser] = useState<AdminUser | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState("")
+  const [newUser, setNewUser] = useState({
+    email: "",
+    first_name: "",
+    last_name: "",
+    role: "user" as "user" | "admin",
+    business_name: "",
+    plan_id: "",
+  })
 
   useEffect(() => {
     fetchUsers()
@@ -81,7 +90,11 @@ export default function AdminUsersPage() {
       const response = await fetch("/api/admin/users")
       if (response.ok) {
         const data = await response.json()
-        setUsers(data.users || [])
+        const uniqueUsers =
+          data.users?.filter(
+            (user: AdminUser, index: number, self: AdminUser[]) => index === self.findIndex((u) => u.id === user.id),
+          ) || []
+        setUsers(uniqueUsers)
       }
     } catch (error) {
       console.error("Failed to fetch users:", error)
@@ -99,6 +112,36 @@ export default function AdminUsersPage() {
       }
     } catch (error) {
       console.error("Failed to fetch plans:", error)
+    }
+  }
+
+  const handleCreateUser = async () => {
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newUser),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setMessage({ type: "success", text: "User created successfully" })
+        fetchUsers()
+        setIsAddDialogOpen(false)
+        setNewUser({
+          email: "",
+          first_name: "",
+          last_name: "",
+          role: "user",
+          business_name: "",
+          plan_id: "",
+        })
+      } else {
+        setMessage({ type: "error", text: result.error || "Failed to create user" })
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: "Network error. Please try again." })
     }
   }
 
@@ -199,7 +242,7 @@ export default function AdminUsersPage() {
           <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
           <p className="text-gray-600">Manage user accounts, roles, and permissions</p>
         </div>
-        <Button>
+        <Button onClick={() => setIsAddDialogOpen(true)}>
           <UserPlus className="h-4 w-4 mr-2" />
           Add User
         </Button>
@@ -380,6 +423,101 @@ export default function AdminUsersPage() {
         </CardContent>
       </Card>
 
+      {/* Add User Dialog */}
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New User</DialogTitle>
+            <DialogDescription>Create a new user account</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="add-first-name">First Name *</Label>
+                <Input
+                  id="add-first-name"
+                  value={newUser.first_name}
+                  onChange={(e) => setNewUser((prev) => ({ ...prev, first_name: e.target.value }))}
+                  placeholder="Enter first name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-last-name">Last Name *</Label>
+                <Input
+                  id="add-last-name"
+                  value={newUser.last_name}
+                  onChange={(e) => setNewUser((prev) => ({ ...prev, last_name: e.target.value }))}
+                  placeholder="Enter last name"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-email">Email *</Label>
+              <Input
+                id="add-email"
+                type="email"
+                value={newUser.email}
+                onChange={(e) => setNewUser((prev) => ({ ...prev, email: e.target.value }))}
+                placeholder="Enter email address"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-business-name">Business Name</Label>
+              <Input
+                id="add-business-name"
+                value={newUser.business_name}
+                onChange={(e) => setNewUser((prev) => ({ ...prev, business_name: e.target.value }))}
+                placeholder="Enter business name (optional)"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="add-role">Role</Label>
+                <Select
+                  value={newUser.role}
+                  onValueChange={(value: "user" | "admin") => setNewUser((prev) => ({ ...prev, role: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">User</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-plan">Plan</Label>
+                <Select
+                  value={newUser.plan_id}
+                  onValueChange={(value) => setNewUser((prev) => ({ ...prev, plan_id: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no-plan">No Plan (Free)</SelectItem>
+                    {plans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.id}>
+                        {plan.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateUser} disabled={!newUser.email || !newUser.first_name || !newUser.last_name}>
+              Create User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit User Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
@@ -514,3 +652,4 @@ export default function AdminUsersPage() {
     </div>
   )
 }
+</merged_code>
