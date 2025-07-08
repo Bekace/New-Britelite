@@ -1,3 +1,6 @@
+"use client"
+
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -24,58 +27,58 @@ interface Plan {
   is_popular?: boolean
 }
 
-async function getPlans(): Promise<Plan[]> {
-  try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/plans`, {
-      cache: "no-store",
-    })
+export default function HomePage() {
+  const [plans, setPlans] = useState<Plan[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-    if (!response.ok) {
-      throw new Error("Failed to fetch plans")
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        const response = await fetch("/api/plans")
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            const transformedPlans = data.plans.map((plan: any) => ({
+              ...plan,
+              is_popular: plan.name === "Starter",
+            }))
+            setPlans(transformedPlans)
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching plans:", error)
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    const data = await response.json()
-    if (data.success) {
-      return data.plans.map((plan: any) => ({
-        ...plan,
-        is_popular: plan.name === "Starter",
-      }))
+    fetchPlans()
+  }, [])
+
+  const getPlanIcon = (planName: string) => {
+    switch (planName.toLowerCase()) {
+      case "starter":
+        return <Zap className="h-5 w-5" />
+      case "professional":
+        return <BarChart3 className="h-5 w-5" />
+      case "enterprise":
+        return <Crown className="h-5 w-5" />
+      default:
+        return <Star className="h-5 w-5" />
     }
-
-    return []
-  } catch (error) {
-    console.error("Error fetching plans:", error)
-    return []
   }
-}
 
-const getPlanIcon = (planName: string) => {
-  switch (planName.toLowerCase()) {
-    case "starter":
-      return <Zap className="h-5 w-5" />
-    case "professional":
-      return <BarChart3 className="h-5 w-5" />
-    case "enterprise":
-      return <Crown className="h-5 w-5" />
-    default:
-      return <Star className="h-5 w-5" />
+  const formatPlanFeatures = (plan: Plan) => {
+    const baseFeatures = [
+      `${plan.max_screens} Screen${plan.max_screens !== 1 ? "s" : ""}`,
+      `${plan.max_storage_gb}GB Storage`,
+      `${plan.max_playlists} Playlist${plan.max_playlists !== 1 ? "s" : ""}`,
+    ]
+
+    const assignedFeatures = plan.features.map((feature) => feature.name)
+
+    return [...baseFeatures, ...assignedFeatures]
   }
-}
-
-const formatPlanFeatures = (plan: Plan) => {
-  const baseFeatures = [
-    `${plan.max_screens} Screen${plan.max_screens !== 1 ? "s" : ""}`,
-    `${plan.max_storage_gb}GB Storage`,
-    `${plan.max_playlists} Playlist${plan.max_playlists !== 1 ? "s" : ""}`,
-  ]
-
-  const assignedFeatures = plan.features.map((feature) => feature.name)
-
-  return [...baseFeatures, ...assignedFeatures]
-}
-
-export default async function HomePage() {
-  const plans = await getPlans()
 
   return (
     <div className="min-h-screen bg-white">
@@ -225,7 +228,14 @@ export default async function HomePage() {
             <p className="text-xl text-gray-600">Start free and scale as you grow</p>
           </div>
 
-          {plans.length > 0 ? (
+          {isLoading ? (
+            <div className="flex items-center justify-center p-8">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="mt-2 text-gray-600">Loading plans...</p>
+              </div>
+            </div>
+          ) : plans.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
               {plans.map((plan) => (
                 <Card key={plan.id} className={`relative ${plan.is_popular ? "ring-2 ring-blue-500" : ""}`}>
@@ -280,7 +290,7 @@ export default async function HomePage() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <p className="text-gray-500">Loading pricing plans...</p>
+              <p className="text-gray-500">Plans will be available soon. Contact us for early access.</p>
             </div>
           )}
         </div>
