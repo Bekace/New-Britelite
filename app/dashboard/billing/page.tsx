@@ -34,89 +34,97 @@ export default function BillingPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Mock data - in real app, fetch from API
-    const mockPlans: Plan[] = [
-      {
-        id: "free",
-        name: "Free",
-        description: "Perfect for testing and small projects",
-        price: 0,
-        billing_cycle: "monthly",
-        max_screens: 1,
-        max_storage_gb: 1,
-        max_playlists: 3,
-        features: ["1 Screen", "1GB Storage", "3 Playlists", "Basic Support", "Standard Templates"],
-      },
-      {
-        id: "starter",
-        name: "Starter",
-        description: "Great for small businesses",
-        price: 29.99,
-        billing_cycle: "monthly",
-        max_screens: 5,
-        max_storage_gb: 10,
-        max_playlists: 15,
-        is_popular: true,
-        features: [
-          "5 Screens",
-          "10GB Storage",
-          "15 Playlists",
-          "Real-time Updates",
-          "Email Support",
-          "Custom Branding",
-          "Analytics Dashboard",
-        ],
-      },
-      {
-        id: "professional",
-        name: "Professional",
-        description: "Perfect for growing businesses",
-        price: 79.99,
-        billing_cycle: "monthly",
-        max_screens: 20,
-        max_storage_gb: 50,
-        max_playlists: 50,
-        features: [
-          "20 Screens",
-          "50GB Storage",
-          "50 Playlists",
-          "Advanced Analytics",
-          "Priority Support",
-          "API Access",
-          "Custom Integrations",
-          "Team Collaboration",
-        ],
-      },
-      {
-        id: "enterprise",
-        name: "Enterprise",
-        description: "For large organizations",
-        price: 199.99,
-        billing_cycle: "monthly",
-        max_screens: 100,
-        max_storage_gb: 200,
-        max_playlists: 200,
-        features: [
-          "100 Screens",
-          "200GB Storage",
-          "Unlimited Playlists",
-          "White-label Solution",
-          "24/7 Phone Support",
-          "Dedicated Account Manager",
-          "Custom Development",
-          "SLA Guarantee",
-        ],
-      },
-    ]
+    const fetchPlans = async () => {
+      try {
+        setIsLoading(true)
 
-    setPlans(mockPlans)
-    setUserPlan({
-      current_plan: "Free",
-      max_screens: 1,
-      max_storage_gb: 1,
-      max_playlists: 3,
-    })
-    setIsLoading(false)
+        // Fetch actual plans from the database
+        const response = await fetch("/api/plans")
+        if (!response.ok) {
+          throw new Error("Failed to fetch plans")
+        }
+
+        const data = await response.json()
+        if (data.success) {
+          // Transform the database plans to match the component structure
+          const transformedPlans = data.plans.map((plan: any) => ({
+            id: plan.id,
+            name: plan.name,
+            description: plan.description,
+            price: Number.parseFloat(plan.price),
+            billing_cycle: plan.billing_cycle,
+            max_screens: plan.max_screens,
+            max_storage_gb: plan.max_storage_gb,
+            max_playlists: plan.max_playlists,
+            features: [
+              `${plan.max_screens} Screen${plan.max_screens !== 1 ? "s" : ""}`,
+              `${plan.max_storage_gb}GB Storage`,
+              `${plan.max_playlists} Playlist${plan.max_playlists !== 1 ? "s" : ""}`,
+              ...(plan.name === "Free" ? ["Basic Support", "Standard Templates"] : []),
+              ...(plan.name === "Starter"
+                ? ["Real-time Updates", "Email Support", "Custom Branding", "Analytics Dashboard"]
+                : []),
+              ...(plan.name === "Professional"
+                ? ["Advanced Analytics", "Priority Support", "API Access", "Custom Integrations", "Team Collaboration"]
+                : []),
+              ...(plan.name === "Enterprise"
+                ? [
+                    "White-label Solution",
+                    "24/7 Phone Support",
+                    "Dedicated Account Manager",
+                    "Custom Development",
+                    "SLA Guarantee",
+                  ]
+                : []),
+            ],
+            is_popular: plan.name === "Starter", // You can make this dynamic later
+          }))
+
+          setPlans(transformedPlans)
+        }
+
+        // Fetch current user's plan info
+        const userResponse = await fetch("/api/auth/me")
+        if (userResponse.ok) {
+          const userData = await userResponse.json()
+          if (userData.success && userData.user) {
+            setUserPlan({
+              current_plan: userData.user.plan_name || "Free",
+              max_screens: userData.user.max_screens || 1,
+              max_storage_gb: userData.user.max_storage_gb || 1,
+              max_playlists: userData.user.max_playlists || 3,
+            })
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching plans:", error)
+        // Fallback to mock data if API fails
+        const mockPlans: Plan[] = [
+          {
+            id: "free",
+            name: "Free",
+            description: "Perfect for testing and small projects",
+            price: 0,
+            billing_cycle: "monthly",
+            max_screens: 1,
+            max_storage_gb: 1,
+            max_playlists: 3,
+            features: ["1 Screen", "1GB Storage", "3 Playlists", "Basic Support", "Standard Templates"],
+          },
+        ]
+        setPlans(mockPlans)
+        setUserPlan({
+          current_plan: "Free",
+          max_screens: 1,
+          max_storage_gb: 1,
+          max_playlists: 3,
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchPlans()
   }, [])
 
   const getPlanIcon = (planName: string) => {
