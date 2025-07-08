@@ -204,7 +204,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <Monitor className="h-8 w-8 text-blue-600" />
             <div className="flex flex-col">
               <span className="text-lg font-bold text-gray-900">Digital Signage</span>
-              <span className="text-xs text-gray-500">{user.business_name || "Platform"}</span>
+              <span className="text-xs text-blue-500">{user.business_name || "Platform"}</span>
             </div>
           </div>
         </SidebarHeader>
