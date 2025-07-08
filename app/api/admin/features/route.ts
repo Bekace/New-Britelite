@@ -5,31 +5,55 @@ import { sql } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
+    console.log("=== Admin Features API called ===") // Debug log
+
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
 
+    console.log("Session token exists:", !!sessionToken) // Debug log
+
     if (!sessionToken) {
+      console.log("No session token found") // Debug log
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
     }
 
     const user = await authService.verifySession(sessionToken)
+    console.log("User verified:", !!user, "Role:", user?.role) // Debug log
+
     if (!user || user.role !== "admin") {
+      console.log("Admin access denied") // Debug log
       return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
     }
 
     // Fetch all plan features
     const features = await sql`
-      SELECT * FROM plan_features
+      SELECT id, name, description, feature_key, is_active, created_at 
+      FROM plan_features
       WHERE is_active = true
       ORDER BY name ASC
     `
 
-    console.log("Features fetched:", features) // Debug log
+    console.log("Raw features from database:", features) // Debug log
+    console.log("Features count:", features.length) // Debug log
 
-    return NextResponse.json({ success: true, features })
+    return NextResponse.json({
+      success: true,
+      features: features,
+      debug: {
+        count: features.length,
+        sample: features[0] || null,
+      },
+    })
   } catch (error) {
-    console.error("Admin features fetch error:", error)
-    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
+    console.error("=== Admin features fetch error ===", error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Internal server error",
+        debug: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }
 

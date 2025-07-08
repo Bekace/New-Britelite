@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   CreditCard,
   Plus,
@@ -78,7 +79,6 @@ export default function AdminPlansPage() {
   const [isFeatureDialogOpen, setIsFeatureDialogOpen] = useState(false)
   const [selectedPlanForFeatures, setSelectedPlanForFeatures] = useState<Plan | null>(null)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
-  const [activeTab, setActiveTab] = useState("plans")
 
   const [newPlan, setNewPlan] = useState({
     name: "",
@@ -99,24 +99,16 @@ export default function AdminPlansPage() {
   const [isCreateFeatureDialogOpen, setIsCreateFeatureDialogOpen] = useState(false)
 
   useEffect(() => {
-    console.log("Component mounted, fetching data...")
     fetchPlans()
     fetchFeatures()
   }, [])
 
   const fetchPlans = async () => {
     try {
-      console.log("Fetching plans...")
       const response = await fetch("/api/admin/plans")
-      console.log("Plans response status:", response.status)
       if (response.ok) {
         const data = await response.json()
-        console.log("Plans data:", data)
         setPlans(data.plans || [])
-      } else {
-        console.error("Failed to fetch plans:", response.status)
-        const errorData = await response.json()
-        console.error("Error details:", errorData)
       }
     } catch (error) {
       console.error("Failed to fetch plans:", error)
@@ -127,30 +119,39 @@ export default function AdminPlansPage() {
 
   const fetchFeatures = async () => {
     try {
-      console.log("Fetching features...")
+      console.log("=== Fetching features from client ===") // Debug log
       const response = await fetch("/api/admin/features")
-      console.log("Features response status:", response.status)
+      console.log("Features API response status:", response.status) // Debug log
+
       if (response.ok) {
         const data = await response.json()
-        console.log("Features data:", data)
+        console.log("Features API response data:", data) // Debug log
+        console.log("Features array:", data.features) // Debug log
+        console.log("Features count:", data.features?.length || 0) // Debug log
+
         setFeatures(data.features || [])
+
+        if (data.features && data.features.length > 0) {
+          console.log("✅ Features loaded successfully:", data.features.length)
+        } else {
+          console.log("⚠️ No features returned from API")
+        }
       } else {
-        console.error("Failed to fetch features:", response.status)
         const errorData = await response.json()
-        console.error("Features error details:", errorData)
+        console.error("❌ Features API error:", response.status, errorData)
       }
     } catch (error) {
-      console.error("Failed to fetch features:", error)
+      console.error("❌ Failed to fetch features:", error)
     }
   }
 
   const fetchPlanFeatures = async (planId: string) => {
     try {
-      console.log("Fetching plan features for plan:", planId)
+      console.log("Fetching plan features for plan:", planId) // Debug log
       const response = await fetch(`/api/admin/plans/${planId}/features`)
       if (response.ok) {
         const data = await response.json()
-        console.log("Plan features data:", data)
+        console.log("Plan features data:", data) // Debug log
         return data.features || []
       } else {
         console.error("Failed to fetch plan features:", response.status)
@@ -240,7 +241,6 @@ export default function AdminPlansPage() {
 
   const handleCreateFeature = async () => {
     try {
-      console.log("Creating feature:", newFeature)
       const response = await fetch("/api/admin/features", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -248,7 +248,6 @@ export default function AdminPlansPage() {
       })
 
       const result = await response.json()
-      console.log("Create feature result:", result)
 
       if (result.success) {
         setMessage({ type: "success", text: "Feature created successfully" })
@@ -263,7 +262,6 @@ export default function AdminPlansPage() {
         setMessage({ type: "error", text: result.error || "Failed to create feature" })
       }
     } catch (error) {
-      console.error("Create feature error:", error)
       setMessage({ type: "error", text: "Network error. Please try again." })
     }
   }
@@ -310,8 +308,6 @@ export default function AdminPlansPage() {
     }
   }
 
-  console.log("Render - Plans:", plans.length, "Features:", features.length, "Active tab:", activeTab)
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -350,44 +346,13 @@ export default function AdminPlansPage() {
         </Alert>
       )}
 
-      {/* Debug Info */}
-      <Card className="bg-yellow-50 border-yellow-200">
-        <CardContent className="p-4">
-          <p className="text-sm">
-            <strong>Debug:</strong> Plans: {plans.length}, Features: {features.length}, Active Tab: {activeTab}
-          </p>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="plans" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="plans">Plans</TabsTrigger>
+          <TabsTrigger value="features">Features</TabsTrigger>
+        </TabsList>
 
-      {/* Simple Tab Navigation */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab("plans")}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === "plans"
-                ? "border-blue-500 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-            }`}
-          >
-            Plans ({plans.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("features")}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === "features"
-                ? "border-blue-500 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-            }`}
-          >
-            Features ({features.length})
-          </button>
-        </nav>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === "plans" && (
-        <div className="space-y-6">
+        <TabsContent value="plans" className="space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <Card>
@@ -510,11 +475,39 @@ export default function AdminPlansPage() {
               </Card>
             ))}
           </div>
-        </div>
-      )}
+        </TabsContent>
 
-      {activeTab === "features" && (
-        <div className="space-y-6">
+        <TabsContent value="features" className="space-y-6">
+          {/* Debug Information */}
+          <Card className="border-orange-200 bg-orange-50">
+            <CardHeader>
+              <CardTitle className="text-orange-800">Debug Information</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 text-sm text-orange-700">
+                <p>
+                  <strong>Features loaded:</strong> {features.length}
+                </p>
+                <p>
+                  <strong>Features array:</strong> {JSON.stringify(features.slice(0, 2), null, 2)}
+                </p>
+                <p>
+                  <strong>API Status:</strong> Check browser console for detailed logs
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    console.log("Manual features refresh triggered")
+                    fetchFeatures()
+                  }}
+                >
+                  Refresh Features
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -532,10 +525,20 @@ export default function AdminPlansPage() {
               {features.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>No features found. Create your first feature to get started.</p>
-                  <Button className="mt-4" onClick={() => setIsCreateFeatureDialogOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create First Feature
+                  <p>No features found. This could mean:</p>
+                  <ul className="text-sm mt-2 space-y-1">
+                    <li>• Features haven't been added to the database yet</li>
+                    <li>• The API is not returning data correctly</li>
+                    <li>• There's a database connection issue</li>
+                  </ul>
+                  <Button
+                    className="mt-4"
+                    onClick={() => {
+                      console.log("Attempting to create first feature...")
+                      setIsCreateFeatureDialogOpen(true)
+                    }}
+                  >
+                    Create Your First Feature
                   </Button>
                 </div>
               ) : (
@@ -558,8 +561,8 @@ export default function AdminPlansPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
 
       {/* Create Plan Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
