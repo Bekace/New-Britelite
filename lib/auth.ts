@@ -15,7 +15,7 @@ export interface User {
   email: string
   first_name: string
   last_name: string
-  role: "user" | "admin"
+  role: "user" | "admin" | "super_admin"
   is_email_verified: boolean
   plan_id?: string
   plan_name?: string
@@ -264,7 +264,7 @@ export const requireAuth = async (sessionToken?: string): Promise<User | null> =
 }
 
 export const requireAdmin = (user: User | null): boolean => {
-  return user?.role === "admin"
+  return user?.role === "admin" || user?.role === "super_admin"
 }
 
 export const getCurrentUser = async (request: Request): Promise<User | null> => {

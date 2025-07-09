@@ -2,14 +2,15 @@
 
 import type React from "react"
 
-import { DashboardLayout as ModularDashboardLayout } from "./dashboard"
+import { DashboardLayout as Layout } from "./dashboard"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
-  return <ModularDashboardLayout>{children}</ModularDashboardLayout>
+  return <Layout>{children}</Layout>
 }
 
 // Named export for compatibility
+export { DashboardLayout as default }

@@ -17,13 +17,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <DashboardProvider>
       <div className="flex h-screen bg-background">
-        {/* Sidebar */}
         <DashboardSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
-
-        {/* Main Content */}
         <div className="flex flex-1 flex-col overflow-hidden">
           <DashboardHeader />
-          <main className="flex-1 overflow-auto p-6">{children}</main>
+          <main className="flex-1 overflow-y-auto p-6">{children}</main>
           <DashboardFooter />
         </div>
       </div>

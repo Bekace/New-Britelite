@@ -1,48 +1,40 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { authService } from "@/lib/auth"
-import { cookies } from "next/headers"
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { email, password } = body
+    const { email, password } = await request.json()
 
     if (!email || !password) {
-      return NextResponse.json({ success: false, error: "Email and password are required" }, { status: 400 })
+      return NextResponse.json({ error: "Email and password are required" }, { status: 400 })
     }
 
     const result = await authService.login(email, password)
 
     if (!result.success) {
-      return NextResponse.json(result, { status: 401 })
+      return NextResponse.json({ error: result.error }, { status: 401 })
     }
 
-    // Check if email is verified
-    if (result.user && !result.user.is_email_verified) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Please verify your email address before signing in. Check your inbox for the verification link.",
-          requiresVerification: true,
-        },
-        { status: 403 },
-      )
-    }
+    const response = NextResponse.json({
+      success: true,
+      user: result.user,
+      message: result.message,
+    })
 
     // Set session cookie
     if (result.token) {
-      const cookieStore = await cookies()
-      cookieStore.set("session", result.token, {
+      response.cookies.set("session", result.token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60, // 7 days
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+        path: "/",
       })
     }
 
-    return NextResponse.json(result)
+    return response
   } catch (error) {
-    console.error("Login API error:", error)
-    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
+    console.error("Login error:", error)
+    return NextResponse.json({ error: "Login failed. Please try again." }, { status: 500 })
   }
 }

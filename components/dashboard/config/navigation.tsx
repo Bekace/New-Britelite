@@ -13,6 +13,8 @@ import {
   CreditCard,
   HelpCircle,
   Bell,
+  User,
+  Shield,
 } from "lucide-react"
 
 export interface NavigationItem {
@@ -21,9 +23,10 @@ export interface NavigationItem {
   icon: React.ComponentType<{ className?: string }>
   badge?: string
   adminOnly?: boolean
+  superAdminOnly?: boolean
 }
 
-export const navigationItems: NavigationItem[] = [
+export const mainNavigationItems: NavigationItem[] = [
   {
     title: "Overview",
     href: "/dashboard",
@@ -70,15 +73,23 @@ export const navigationItems: NavigationItem[] = [
     icon: BarChart3,
     badge: "Soon",
   },
+]
+
+export const accountNavigationItems: NavigationItem[] = [
   {
-    title: "Settings",
-    href: "/dashboard/settings",
-    icon: Settings,
+    title: "Profile",
+    href: "/dashboard/profile",
+    icon: User,
   },
   {
     title: "Billing",
     href: "/dashboard/billing",
     icon: CreditCard,
+  },
+  {
+    title: "Settings",
+    href: "/dashboard/settings",
+    icon: Settings,
   },
   {
     title: "Notifications",
@@ -90,10 +101,19 @@ export const navigationItems: NavigationItem[] = [
     href: "/dashboard/help",
     icon: HelpCircle,
   },
+]
+
+export const adminNavigationItems: NavigationItem[] = [
   {
     title: "User Management",
     href: "/dashboard/admin/users",
     icon: Users,
     adminOnly: true,
+  },
+  {
+    title: "Plan Management",
+    href: "/dashboard/admin/plans",
+    icon: Shield,
+    superAdminOnly: true,
   },
 ]

@@ -1,32 +1,28 @@
 "use client"
-
-import React from "react"
 import Link from "next/link"
+import { Separator } from "@/components/ui/separator"
 
-export const DashboardFooter = React.memo(function DashboardFooter() {
+export function DashboardFooter() {
   return (
     <footer className="border-t bg-background">
-      <div className="flex h-12 items-center justify-between px-6 text-sm text-muted-foreground">
-        <div className="flex items-center space-x-4">
+      <div className="flex h-16 items-center justify-between px-6">
+        <div className="flex items-center space-x-4 text-sm text-muted-foreground">
           <span>© 2024 BriteLite Digital Signage</span>
-          <span>•</span>
-          <Link href="/privacy" className="hover:text-foreground">
+          <Separator orientation="vertical" className="h-4" />
+          <span>Version 1.0.0</span>
+        </div>
+        <div className="flex items-center space-x-4 text-sm">
+          <Link href="/privacy" className="text-muted-foreground hover:text-foreground">
             Privacy
           </Link>
-          <span>•</span>
-          <Link href="/terms" className="hover:text-foreground">
+          <Link href="/terms" className="text-muted-foreground hover:text-foreground">
             Terms
           </Link>
-        </div>
-        <div className="flex items-center space-x-4">
-          <span>Version 1.0.0</span>
-          <span>•</span>
-          <div className="flex items-center space-x-1">
-            <div className="h-2 w-2 rounded-full bg-green-500" />
-            <span>All systems operational</span>
-          </div>
+          <Link href="/support" className="text-muted-foreground hover:text-foreground">
+            Support
+          </Link>
         </div>
       </div>
     </footer>
   )
-})
+}
