@@ -5,6 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -22,10 +23,13 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
 } from "@/components/ui/sidebar"
 import {
   Monitor,
@@ -35,6 +39,7 @@ import {
   BarChart3,
   CreditCard,
   Bell,
+  LogOut,
   Building,
   HelpCircle,
   Shield,
@@ -281,4 +286,45 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                       <HelpCircle className="mr-2 h-4 w-4" />
                       Help & Support
                     </Link>
-                  \
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout} className="text-red-600">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+
+        <SidebarRail />
+      </Sidebar>
+
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>
+              <strong>Welcome back, {user.first_name}!</strong>
+            </span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/dashboard/notifications">
+                <Bell className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/dashboard/help">
+                <HelpCircle className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-auto">{children}</main>
+      </SidebarInset>
+    </SidebarProvider>
+  )
+}

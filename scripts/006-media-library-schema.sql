@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS media_assets (
     filename VARCHAR(255) NOT NULL,
     original_filename VARCHAR(255) NOT NULL,
     file_type VARCHAR(50) NOT NULL,
-    file_size INTEGER NOT NULL,
+    file_size BIGINT NOT NULL,
     mime_type VARCHAR(100) NOT NULL,
     blob_url TEXT NOT NULL,
     thumbnail_url TEXT,

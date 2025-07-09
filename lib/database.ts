@@ -1,23 +1,18 @@
 import { neon } from "@neondatabase/serverless"
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is not set")
-}
-
-const sql = neon(process.env.DATABASE_URL)
+const sql = neon(process.env.DATABASE_URL!)
 
 // User queries
-export async function createUser(userData: {
-  email: string
-  password_hash: string
-  first_name: string
-  last_name: string
-  business_name?: string
-  verification_token: string
-}) {
+export async function createUser(
+  email: string,
+  hashedPassword: string,
+  firstName: string,
+  lastName: string,
+  businessName?: string,
+) {
   const result = await sql`
-    INSERT INTO users (email, password_hash, first_name, last_name, business_name, verification_token)
-    VALUES (${userData.email}, ${userData.password_hash}, ${userData.first_name}, ${userData.last_name}, ${userData.business_name || null}, ${userData.verification_token})
+    INSERT INTO users (email, password_hash, first_name, last_name, business_name, email_verified)
+    VALUES (${email}, ${hashedPassword}, ${firstName}, ${lastName}, ${businessName}, false)
     RETURNING id, email, first_name, last_name, business_name, role, email_verified, created_at
   `
   return result[0]
@@ -43,83 +38,127 @@ export async function getUserById(id: string) {
   return result[0]
 }
 
-export async function verifyUserEmail(token: string) {
+export async function updateUserEmailVerification(userId: string) {
   const result = await sql`
     UPDATE users 
-    SET email_verified = true, verification_token = null, updated_at = NOW()
-    WHERE verification_token = ${token}
-    RETURNING id, email, first_name, last_name
+    SET email_verified = true, email_verified_at = NOW()
+    WHERE id = ${userId}
+    RETURNING id, email, email_verified
   `
   return result[0]
 }
 
-export async function updateUserProfile(
-  userId: string,
-  updates: {
-    first_name?: string
-    last_name?: string
-    business_name?: string
-    avatar_url?: string
-  },
-) {
+export async function updateUserProfile(userId: string, data: any) {
+  const { firstName, lastName, businessName, phone, address, city, state, zipCode, country } = data
+
   const result = await sql`
     UPDATE users 
     SET 
-      first_name = COALESCE(${updates.first_name}, first_name),
-      last_name = COALESCE(${updates.last_name}, last_name),
-      business_name = COALESCE(${updates.business_name}, business_name),
-      avatar_url = COALESCE(${updates.avatar_url}, avatar_url),
+      first_name = ${firstName},
+      last_name = ${lastName},
+      business_name = ${businessName},
+      phone = ${phone},
+      address = ${address},
+      city = ${city},
+      state = ${state},
+      zip_code = ${zipCode},
+      country = ${country},
       updated_at = NOW()
     WHERE id = ${userId}
-    RETURNING id, email, first_name, last_name, business_name, avatar_url
+    RETURNING id, email, first_name, last_name, business_name, phone, address, city, state, zip_code, country
   `
   return result[0]
 }
 
-export async function setPasswordResetToken(email: string, token: string, expiresAt: Date) {
+// Password reset queries
+export async function createPasswordResetToken(userId: string, token: string, expiresAt: Date) {
+  await sql`
+    INSERT INTO password_reset_tokens (user_id, token, expires_at)
+    VALUES (${userId}, ${token}, ${expiresAt.toISOString()})
+  `
+}
+
+export async function getPasswordResetToken(token: string) {
   const result = await sql`
+    SELECT prt.*, u.email
+    FROM password_reset_tokens prt
+    JOIN users u ON prt.user_id = u.id
+    WHERE prt.token = ${token} AND prt.expires_at > NOW() AND prt.used = false
+  `
+  return result[0]
+}
+
+export async function markPasswordResetTokenAsUsed(token: string) {
+  await sql`
+    UPDATE password_reset_tokens 
+    SET used = true 
+    WHERE token = ${token}
+  `
+}
+
+export async function updateUserPassword(userId: string, hashedPassword: string) {
+  await sql`
     UPDATE users 
-    SET reset_token = ${token}, reset_token_expires = ${expiresAt.toISOString()}, updated_at = NOW()
-    WHERE email = ${email}
-    RETURNING id, email, first_name, last_name
-  `
-  return result[0]
-}
-
-export async function getUserByResetToken(token: string) {
-  const result = await sql`
-    SELECT * FROM users 
-    WHERE reset_token = ${token} AND reset_token_expires > NOW()
-  `
-  return result[0]
-}
-
-export async function updatePassword(userId: string, passwordHash: string) {
-  const result = await sql`
-    UPDATE users 
-    SET password_hash = ${passwordHash}, reset_token = null, reset_token_expires = null, updated_at = NOW()
+    SET password_hash = ${hashedPassword}
     WHERE id = ${userId}
-    RETURNING id, email
+  `
+}
+
+// Email verification queries
+export async function createEmailVerificationToken(userId: string, token: string, expiresAt: Date) {
+  await sql`
+    INSERT INTO email_verification_tokens (user_id, token, expires_at)
+    VALUES (${userId}, ${token}, ${expiresAt.toISOString()})
+  `
+}
+
+export async function getEmailVerificationToken(token: string) {
+  const result = await sql`
+    SELECT evt.*, u.email
+    FROM email_verification_tokens evt
+    JOIN users u ON evt.user_id = u.id
+    WHERE evt.token = ${token} AND evt.expires_at > NOW() AND evt.used = false
   `
   return result[0]
+}
+
+export async function markEmailVerificationTokenAsUsed(token: string) {
+  await sql`
+    UPDATE email_verification_tokens 
+    SET used = true 
+    WHERE token = ${token}
+  `
 }
 
 // Admin queries
-export async function getAllUsers(limit = 50, offset = 0) {
-  const result = await sql`
-    SELECT u.*, p.name as plan_name
+export async function getAllUsers(page = 1, limit = 10, search?: string) {
+  const offset = (page - 1) * limit
+
+  let query = `
+    SELECT u.*, p.name as plan_name,
+           COUNT(*) OVER() as total_count
     FROM users u
     LEFT JOIN plans p ON u.plan_id = p.id
-    ORDER BY u.created_at DESC
-    LIMIT ${limit} OFFSET ${offset}
   `
+
+  const params: any[] = []
+
+  if (search) {
+    query += ` WHERE u.email ILIKE $${params.length + 1} OR u.first_name ILIKE $${params.length + 1} OR u.last_name ILIKE $${params.length + 1}`
+    params.push(`%${search}%`)
+  }
+
+  query += ` ORDER BY u.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
+  params.push(limit, offset)
+
+  const result = await sql(query, params)
   return result
 }
 
-export async function updateUserRole(userId: string, role: "user" | "admin") {
+export async function updateUserRole(userId: string, role: string) {
   const result = await sql`
     UPDATE users 
-    SET role = ${role}, updated_at = NOW()
+    SET role = ${role}
     WHERE id = ${userId}
     RETURNING id, email, role
   `
@@ -127,82 +166,94 @@ export async function updateUserRole(userId: string, role: "user" | "admin") {
 }
 
 export async function deleteUser(userId: string) {
-  const result = await sql`
-    DELETE FROM users WHERE id = ${userId}
-    RETURNING id, email
-  `
-  return result[0]
+  await sql`DELETE FROM users WHERE id = ${userId}`
 }
 
 // Plan queries
 export async function getAllPlans() {
   const result = await sql`
-    SELECT * FROM plans ORDER BY price ASC
+    SELECT p.*, 
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'id', f.id,
+                 'name', f.name,
+                 'description', f.description,
+                 'feature_key', f.feature_key
+               )
+             ) FILTER (WHERE f.id IS NOT NULL), 
+             '[]'
+           ) as features
+    FROM plans p
+    LEFT JOIN plan_features pf ON p.id = pf.plan_id
+    LEFT JOIN features f ON pf.feature_id = f.id
+    GROUP BY p.id
+    ORDER BY p.price ASC
   `
   return result
 }
 
-export async function getPlanById(id: string) {
+export async function getPlanById(planId: string) {
   const result = await sql`
-    SELECT * FROM plans WHERE id = ${id}
+    SELECT p.*, 
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'id', f.id,
+                 'name', f.name,
+                 'description', f.description,
+                 'feature_key', f.feature_key
+               )
+             ) FILTER (WHERE f.id IS NOT NULL), 
+             '[]'
+           ) as features
+    FROM plans p
+    LEFT JOIN plan_features pf ON p.id = pf.plan_id
+    LEFT JOIN features f ON pf.feature_id = f.id
+    WHERE p.id = ${planId}
+    GROUP BY p.id
   `
   return result[0]
 }
 
-export async function createPlan(planData: {
-  name: string
-  description?: string
-  price: number
-  billing_cycle: "monthly" | "yearly"
-  max_screens?: number
-  max_storage_gb?: number
-  features?: string[]
-}) {
+export async function createPlan(
+  name: string,
+  description: string,
+  price: number,
+  billingInterval: string,
+  maxScreens: number,
+  maxStorage: number,
+) {
   const result = await sql`
-    INSERT INTO plans (name, description, price, billing_cycle, max_screens, max_storage_gb, features)
-    VALUES (${planData.name}, ${planData.description || null}, ${planData.price}, ${planData.billing_cycle}, ${planData.max_screens || null}, ${planData.max_storage_gb || null}, ${JSON.stringify(planData.features || [])})
+    INSERT INTO plans (name, description, price, billing_interval, max_screens, max_storage)
+    VALUES (${name}, ${description}, ${price}, ${billingInterval}, ${maxScreens}, ${maxStorage})
     RETURNING *
   `
   return result[0]
 }
 
 export async function updatePlan(
-  id: string,
-  updates: {
-    name?: string
-    description?: string
-    price?: number
-    billing_cycle?: "monthly" | "yearly"
-    max_screens?: number
-    max_storage_gb?: number
-    features?: string[]
-    is_active?: boolean
-  },
+  planId: string,
+  name: string,
+  description: string,
+  price: number,
+  billingInterval: string,
+  maxScreens: number,
+  maxStorage: number,
 ) {
   const result = await sql`
     UPDATE plans 
-    SET 
-      name = COALESCE(${updates.name}, name),
-      description = COALESCE(${updates.description}, description),
-      price = COALESCE(${updates.price}, price),
-      billing_cycle = COALESCE(${updates.billing_cycle}, billing_cycle),
-      max_screens = COALESCE(${updates.max_screens}, max_screens),
-      max_storage_gb = COALESCE(${updates.max_storage_gb}, max_storage_gb),
-      features = COALESCE(${updates.features ? JSON.stringify(updates.features) : null}, features),
-      is_active = COALESCE(${updates.is_active}, is_active),
-      updated_at = NOW()
-    WHERE id = ${id}
+    SET name = ${name}, description = ${description}, price = ${price}, 
+        billing_interval = ${billingInterval}, max_screens = ${maxScreens}, 
+        max_storage = ${maxStorage}, updated_at = NOW()
+    WHERE id = ${planId}
     RETURNING *
   `
   return result[0]
 }
 
-export async function deletePlan(id: string) {
-  const result = await sql`
-    DELETE FROM plans WHERE id = ${id}
-    RETURNING id, name
-  `
-  return result[0]
+export async function deletePlan(planId: string) {
+  await sql`DELETE FROM plans WHERE id = ${planId}`
 }
 
 // Feature queries
@@ -213,51 +264,33 @@ export async function getAllFeatures() {
   return result
 }
 
-export async function createFeature(featureData: {
-  name: string
-  description?: string
-  feature_key: string
-}) {
+export async function createFeature(name: string, description: string, featureKey: string) {
   const result = await sql`
     INSERT INTO features (name, description, feature_key)
-    VALUES (${featureData.name}, ${featureData.description || null}, ${featureData.feature_key})
+    VALUES (${name}, ${description}, ${featureKey})
     RETURNING *
   `
   return result[0]
 }
 
-export async function updateFeature(
-  id: string,
-  updates: {
-    name?: string
-    description?: string
-    feature_key?: string
-  },
-) {
+export async function updateFeature(featureId: string, name: string, description: string, featureKey: string) {
   const result = await sql`
     UPDATE features 
-    SET 
-      name = COALESCE(${updates.name}, name),
-      description = COALESCE(${updates.description}, description),
-      feature_key = COALESCE(${updates.feature_key}, feature_key),
-      updated_at = NOW()
-    WHERE id = ${id}
+    SET name = ${name}, description = ${description}, feature_key = ${featureKey}, updated_at = NOW()
+    WHERE id = ${featureId}
     RETURNING *
   `
   return result[0]
 }
 
-export async function deleteFeature(id: string) {
-  const result = await sql`
-    DELETE FROM features WHERE id = ${id}
-    RETURNING id, name
-  `
-  return result[0]
+export async function deleteFeature(featureId: string) {
+  await sql`DELETE FROM features WHERE id = ${featureId}`
 }
 
 export async function getPlanFeatures(planId: string) {
   const result = await sql`
-    SELECT f.* FROM features f
+    SELECT f.* 
+    FROM features f
     JOIN plan_features pf ON f.id = pf.feature_id
     WHERE pf.plan_id = ${planId}
     ORDER BY f.name ASC
@@ -266,33 +299,25 @@ export async function getPlanFeatures(planId: string) {
 }
 
 export async function addFeatureToPlan(planId: string, featureId: string) {
-  const result = await sql`
+  await sql`
     INSERT INTO plan_features (plan_id, feature_id)
     VALUES (${planId}, ${featureId})
     ON CONFLICT (plan_id, feature_id) DO NOTHING
-    RETURNING *
   `
-  return result[0]
 }
 
 export async function removeFeatureFromPlan(planId: string, featureId: string) {
-  const result = await sql`
+  await sql`
     DELETE FROM plan_features 
     WHERE plan_id = ${planId} AND feature_id = ${featureId}
-    RETURNING *
   `
-  return result[0]
 }
 
 // Media Library queries
-export async function createMediaFolder(folderData: {
-  name: string
-  parent_id?: string
-  user_id: string
-}) {
+export async function createMediaFolder(name: string, userId: string, parentId?: string) {
   const result = await sql`
-    INSERT INTO media_folders (name, parent_id, user_id)
-    VALUES (${folderData.name}, ${folderData.parent_id || null}, ${folderData.user_id})
+    INSERT INTO media_folders (name, user_id, parent_id)
+    VALUES (${name}, ${userId}, ${parentId || null})
     RETURNING *
   `
   return result[0]
@@ -308,25 +333,23 @@ export async function getMediaFolders(userId: string, parentId?: string) {
 }
 
 export async function deleteMediaFolder(folderId: string, userId: string) {
-  const result = await sql`
+  await sql`
     DELETE FROM media_folders 
     WHERE id = ${folderId} AND user_id = ${userId}
-    RETURNING *
   `
-  return result[0]
 }
 
-export async function createMediaAsset(assetData: {
+export async function createMediaAsset(data: {
   filename: string
-  original_filename: string
-  file_type: string
-  file_size: number
-  mime_type: string
-  blob_url: string
-  thumbnail_url?: string
-  folder_id?: string
-  user_id: string
-  metadata?: object
+  originalFilename: string
+  fileType: string
+  fileSize: number
+  mimeType: string
+  blobUrl: string
+  thumbnailUrl?: string
+  folderId?: string
+  userId: string
+  metadata?: any
 }) {
   const result = await sql`
     INSERT INTO media_assets (
@@ -334,36 +357,41 @@ export async function createMediaAsset(assetData: {
       blob_url, thumbnail_url, folder_id, user_id, metadata
     )
     VALUES (
-      ${assetData.filename}, ${assetData.original_filename}, ${assetData.file_type}, 
-      ${assetData.file_size}, ${assetData.mime_type}, ${assetData.blob_url}, 
-      ${assetData.thumbnail_url || null}, ${assetData.folder_id || null}, 
-      ${assetData.user_id}, ${JSON.stringify(assetData.metadata || {})}
+      ${data.filename}, ${data.originalFilename}, ${data.fileType}, 
+      ${data.fileSize}, ${data.mimeType}, ${data.blobUrl}, 
+      ${data.thumbnailUrl || null}, ${data.folderId || null}, 
+      ${data.userId}, ${JSON.stringify(data.metadata || {})}
     )
     RETURNING *
   `
   return result[0]
 }
 
-export async function getMediaAssets(userId: string, folderId?: string, limit = 50, offset = 0) {
-  const result = await sql`
-    SELECT * FROM media_assets 
-    WHERE user_id = ${userId} AND folder_id ${folderId ? `= ${folderId}` : "IS NULL"}
-    ORDER BY created_at DESC
-    LIMIT ${limit} OFFSET ${offset}
+export async function getMediaAssets(userId: string, folderId?: string, search?: string) {
+  let query = `
+    SELECT ma.*, mf.name as folder_name
+    FROM media_assets ma
+    LEFT JOIN media_folders mf ON ma.folder_id = mf.id
+    WHERE ma.user_id = $1
   `
-  return result
-}
 
-export async function searchMediaAssets(userId: string, query: string, limit = 50) {
-  const result = await sql`
-    SELECT * FROM media_assets 
-    WHERE user_id = ${userId} AND (
-      original_filename ILIKE ${"%" + query + "%"} OR
-      filename ILIKE ${"%" + query + "%"}
-    )
-    ORDER BY created_at DESC
-    LIMIT ${limit}
-  `
+  const params: any[] = [userId]
+
+  if (folderId) {
+    query += ` AND ma.folder_id = $${params.length + 1}`
+    params.push(folderId)
+  } else {
+    query += ` AND ma.folder_id IS NULL`
+  }
+
+  if (search) {
+    query += ` AND ma.original_filename ILIKE $${params.length + 1}`
+    params.push(`%${search}%`)
+  }
+
+  query += ` ORDER BY ma.created_at DESC`
+
+  const result = await sql(query, params)
   return result
 }
 
@@ -371,17 +399,15 @@ export async function deleteMediaAsset(assetId: string, userId: string) {
   const result = await sql`
     DELETE FROM media_assets 
     WHERE id = ${assetId} AND user_id = ${userId}
-    RETURNING *
+    RETURNING blob_url, thumbnail_url
   `
   return result[0]
 }
 
-export async function moveMediaAsset(assetId: string, folderId: string | null, userId: string) {
-  const result = await sql`
+export async function moveMediaAssets(assetIds: string[], folderId: string | null, userId: string) {
+  await sql`
     UPDATE media_assets 
     SET folder_id = ${folderId}, updated_at = NOW()
-    WHERE id = ${assetId} AND user_id = ${userId}
-    RETURNING *
+    WHERE id = ANY(${assetIds}) AND user_id = ${userId}
   `
-  return result[0]
 }

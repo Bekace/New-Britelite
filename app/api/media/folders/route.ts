@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const parentId = searchParams.get("parentId")
 
     const folders = await getMediaFolders(user.id, parentId || undefined)
+
     return NextResponse.json({ folders })
   } catch (error) {
     console.error("Error fetching folders:", error)
@@ -33,13 +34,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Folder name is required" }, { status: 400 })
     }
 
-    const folder = await createMediaFolder({
-      name: name.trim(),
-      parent_id: parentId || undefined,
-      user_id: user.id,
-    })
+    const folder = await createMediaFolder(name.trim(), user.id, parentId)
 
-    return NextResponse.json({ success: true, folder })
+    return NextResponse.json({ folder })
   } catch (error) {
     console.error("Error creating folder:", error)
     return NextResponse.json({ error: "Failed to create folder" }, { status: 500 })
@@ -57,13 +54,10 @@ export async function DELETE(request: NextRequest) {
     const folderId = searchParams.get("id")
 
     if (!folderId) {
-      return NextResponse.json({ error: "Folder ID required" }, { status: 400 })
+      return NextResponse.json({ error: "Folder ID is required" }, { status: 400 })
     }
 
-    const deletedFolder = await deleteMediaFolder(folderId, user.id)
-    if (!deletedFolder) {
-      return NextResponse.json({ error: "Folder not found" }, { status: 404 })
-    }
+    await deleteMediaFolder(folderId, user.id)
 
     return NextResponse.json({ success: true })
   } catch (error) {
