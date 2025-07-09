@@ -2,33 +2,31 @@
 
 import React from "react"
 import Link from "next/link"
-import { Separator } from "@/components/ui/separator"
 
-export const DashboardFooter = React.memo(() => {
+export const DashboardFooter = React.memo(function DashboardFooter() {
   return (
     <footer className="border-t bg-background">
-      <div className="container mx-auto px-6 py-4">
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center space-x-4">
-            <span>© 2024 BriteLite Digital Signage</span>
-            <Separator orientation="vertical" className="h-4" />
-            <span>Version 1.0.0</span>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Link href="/help" className="hover:text-foreground">
-              Help
-            </Link>
-            <Link href="/privacy" className="hover:text-foreground">
-              Privacy
-            </Link>
-            <Link href="/terms" className="hover:text-foreground">
-              Terms
-            </Link>
+      <div className="flex h-12 items-center justify-between px-6 text-sm text-muted-foreground">
+        <div className="flex items-center space-x-4">
+          <span>© 2024 BriteLite Digital Signage</span>
+          <span>•</span>
+          <Link href="/privacy" className="hover:text-foreground">
+            Privacy
+          </Link>
+          <span>•</span>
+          <Link href="/terms" className="hover:text-foreground">
+            Terms
+          </Link>
+        </div>
+        <div className="flex items-center space-x-4">
+          <span>Version 1.0.0</span>
+          <span>•</span>
+          <div className="flex items-center space-x-1">
+            <div className="h-2 w-2 rounded-full bg-green-500" />
+            <span>All systems operational</span>
           </div>
         </div>
       </div>
     </footer>
   )
 })
-
-DashboardFooter.displayName = "DashboardFooter"

@@ -1,7 +1,10 @@
+import type React from "react"
 import {
   LayoutDashboard,
   ImageIcon,
   Video,
+  Music,
+  FileText,
   Monitor,
   Calendar,
   BarChart3,
@@ -10,15 +13,14 @@ import {
   CreditCard,
   HelpCircle,
   Bell,
-  User,
 } from "lucide-react"
 
 export interface NavigationItem {
   title: string
   href: string
-  icon: any
+  icon: React.ComponentType<{ className?: string }>
   badge?: string
-  children?: NavigationItem[]
+  adminOnly?: boolean
 }
 
 export const navigationItems: NavigationItem[] = [
@@ -28,94 +30,70 @@ export const navigationItems: NavigationItem[] = [
     icon: LayoutDashboard,
   },
   {
-    title: "Content",
-    href: "/dashboard/content",
+    title: "Media Library",
+    href: "/dashboard/media",
     icon: ImageIcon,
-    children: [
-      {
-        title: "Media Library",
-        href: "/dashboard/media",
-        icon: ImageIcon,
-      },
-      {
-        title: "Videos",
-        href: "/dashboard/videos",
-        icon: Video,
-      },
-      {
-        title: "Playlists",
-        href: "/dashboard/playlists",
-        icon: Calendar,
-      },
-    ],
   },
   {
-    title: "Display",
-    href: "/dashboard/display",
+    title: "Videos",
+    href: "/dashboard/videos",
+    icon: Video,
+    badge: "Soon",
+  },
+  {
+    title: "Audio",
+    href: "/dashboard/audio",
+    icon: Music,
+    badge: "Soon",
+  },
+  {
+    title: "Documents",
+    href: "/dashboard/documents",
+    icon: FileText,
+    badge: "Soon",
+  },
+  {
+    title: "Displays",
+    href: "/dashboard/displays",
     icon: Monitor,
-    children: [
-      {
-        title: "Screens",
-        href: "/dashboard/screens",
-        icon: Monitor,
-      },
-      {
-        title: "Schedules",
-        href: "/dashboard/schedules",
-        icon: Calendar,
-      },
-    ],
+    badge: "Soon",
+  },
+  {
+    title: "Playlists",
+    href: "/dashboard/playlists",
+    icon: Calendar,
+    badge: "Soon",
   },
   {
     title: "Analytics",
     href: "/dashboard/analytics",
     icon: BarChart3,
+    badge: "Soon",
   },
   {
-    title: "Account",
-    href: "/dashboard/account",
-    icon: User,
-    children: [
-      {
-        title: "Profile",
-        href: "/dashboard/profile",
-        icon: User,
-      },
-      {
-        title: "Billing",
-        href: "/dashboard/billing",
-        icon: CreditCard,
-      },
-      {
-        title: "Notifications",
-        href: "/dashboard/notifications",
-        icon: Bell,
-      },
-    ],
-  },
-]
-
-export const adminNavigationItems: NavigationItem[] = [
-  {
-    title: "Admin",
-    href: "/dashboard/admin",
+    title: "Settings",
+    href: "/dashboard/settings",
     icon: Settings,
-    children: [
-      {
-        title: "Users",
-        href: "/dashboard/admin/users",
-        icon: Users,
-      },
-      {
-        title: "Plans",
-        href: "/dashboard/admin/plans",
-        icon: CreditCard,
-      },
-    ],
   },
   {
-    title: "Help",
+    title: "Billing",
+    href: "/dashboard/billing",
+    icon: CreditCard,
+  },
+  {
+    title: "Notifications",
+    href: "/dashboard/notifications",
+    icon: Bell,
+  },
+  {
+    title: "Help & Support",
     href: "/dashboard/help",
     icon: HelpCircle,
+  },
+  {
+    title: "User Management",
+    href: "/dashboard/admin/users",
+    icon: Users,
+    adminOnly: true,
   },
 ]
