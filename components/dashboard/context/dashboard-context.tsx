@@ -6,12 +6,12 @@ import { createContext, useContext, useEffect, useState } from "react"
 interface User {
   id: string
   email: string
-  firstName: string
-  lastName: string
+  first_name: string
+  last_name: string
   role: "user" | "admin" | "super_admin"
-  isEmailVerified: boolean
-  createdAt: string
-  updatedAt: string
+  is_email_verified: boolean
+  business_name?: string
+  avatar_url?: string
 }
 
 interface DashboardContextType {
@@ -36,22 +36,20 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
       const response = await fetch("/api/auth/me", {
         credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
       })
 
       if (response.ok) {
         const userData = await response.json()
         setUser(userData.user)
-      } else if (response.status === 401) {
-        setUser(null)
       } else {
-        throw new Error("Failed to fetch user data")
+        setUser(null)
+        if (response.status !== 401) {
+          setError("Failed to fetch user data")
+        }
       }
     } catch (err) {
       console.error("Error fetching user:", err)
-      setError(err instanceof Error ? err.message : "An error occurred")
+      setError("Network error")
       setUser(null)
     } finally {
       setLoading(false)
@@ -71,7 +69,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
       window.location.href = "/auth/login"
     } catch (err) {
-      console.error("Error logging out:", err)
+      console.error("Logout error:", err)
     }
   }
 
@@ -79,15 +77,19 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     fetchUser()
   }, [])
 
-  const value: DashboardContextType = {
-    user,
-    loading,
-    error,
-    refreshUser,
-    logout,
-  }
-
-  return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>
+  return (
+    <DashboardContext.Provider
+      value={{
+        user,
+        loading,
+        error,
+        refreshUser,
+        logout,
+      }}
+    >
+      {children}
+    </DashboardContext.Provider>
+  )
 }
 
 export function useDashboard() {

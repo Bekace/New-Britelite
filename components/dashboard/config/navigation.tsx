@@ -1,18 +1,17 @@
 import type React from "react"
-import { BarChart3, Bell, CreditCard, FileImage, HelpCircle, Home, Settings, Users, Zap } from "lucide-react"
+import { BarChart3, Bell, CreditCard, FileImage, HelpCircle, Home, Settings, Shield, Users, Zap } from "lucide-react"
 
 export interface NavigationItem {
   title: string
   href: string
   icon: React.ComponentType<{ className?: string }>
   badge?: string
-  roles?: ("user" | "admin" | "super_admin")[]
+  roles?: string[]
 }
 
 export interface NavigationSection {
   title: string
   items: NavigationItem[]
-  roles?: ("user" | "admin" | "super_admin")[]
 }
 
 export const navigationConfig: NavigationSection[] = [
@@ -63,7 +62,6 @@ export const navigationConfig: NavigationSection[] = [
   },
   {
     title: "Administration",
-    roles: ["admin", "super_admin"],
     items: [
       {
         title: "User Management",
@@ -77,23 +75,23 @@ export const navigationConfig: NavigationSection[] = [
         icon: Zap,
         roles: ["super_admin"],
       },
+      {
+        title: "System Settings",
+        href: "/dashboard/admin/settings",
+        icon: Shield,
+        roles: ["super_admin"],
+      },
     ],
   },
 ]
 
-export function getFilteredNavigation(userRole: string | undefined): NavigationSection[] {
-  if (!userRole) return []
-
+export function getFilteredNavigation(userRole?: string): NavigationSection[] {
   return navigationConfig
-    .filter((section) => {
-      if (!section.roles) return true
-      return section.roles.includes(userRole as any)
-    })
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
         if (!item.roles) return true
-        return item.roles.includes(userRole as any)
+        return userRole && item.roles.includes(userRole)
       }),
     }))
     .filter((section) => section.items.length > 0)
