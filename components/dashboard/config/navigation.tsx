@@ -1,114 +1,121 @@
 import {
-  Home,
-  BarChart3,
+  LayoutDashboard,
   ImageIcon,
-  Play,
-  Upload,
+  Video,
   Monitor,
   Calendar,
-  Activity,
-  Building,
-  CreditCard,
+  BarChart3,
   Settings,
   Users,
-  Shield,
+  CreditCard,
+  HelpCircle,
+  Bell,
+  User,
 } from "lucide-react"
 
-export const navigationItems = [
+export interface NavigationItem {
+  title: string
+  href: string
+  icon: any
+  badge?: string
+  children?: NavigationItem[]
+}
+
+export const navigationItems: NavigationItem[] = [
   {
     title: "Overview",
-    items: [
-      {
-        title: "Dashboard",
-        url: "/dashboard",
-        icon: Home,
-      },
-      {
-        title: "Analytics",
-        url: "/dashboard/analytics",
-        icon: BarChart3,
-      },
-    ],
+    href: "/dashboard",
+    icon: LayoutDashboard,
   },
   {
-    title: "Content Management",
-    items: [
+    title: "Content",
+    href: "/dashboard/content",
+    icon: ImageIcon,
+    children: [
       {
         title: "Media Library",
-        url: "/dashboard/media",
+        href: "/dashboard/media",
         icon: ImageIcon,
       },
       {
-        title: "Playlists",
-        url: "/dashboard/playlists",
-        icon: Play,
+        title: "Videos",
+        href: "/dashboard/videos",
+        icon: Video,
       },
       {
-        title: "Upload",
-        url: "/dashboard/upload",
-        icon: Upload,
+        title: "Playlists",
+        href: "/dashboard/playlists",
+        icon: Calendar,
       },
     ],
   },
   {
-    title: "Display Management",
-    items: [
+    title: "Display",
+    href: "/dashboard/display",
+    icon: Monitor,
+    children: [
       {
         title: "Screens",
-        url: "/dashboard/screens",
+        href: "/dashboard/screens",
         icon: Monitor,
       },
       {
-        title: "Scheduling",
-        url: "/dashboard/scheduling",
+        title: "Schedules",
+        href: "/dashboard/schedules",
         icon: Calendar,
-      },
-      {
-        title: "Activity",
-        url: "/dashboard/activity",
-        icon: Activity,
       },
     ],
   },
-]
-
-export const accountItems = [
+  {
+    title: "Analytics",
+    href: "/dashboard/analytics",
+    icon: BarChart3,
+  },
   {
     title: "Account",
-    items: [
+    href: "/dashboard/account",
+    icon: User,
+    children: [
       {
         title: "Profile",
-        url: "/dashboard/profile",
-        icon: Building,
+        href: "/dashboard/profile",
+        icon: User,
       },
       {
         title: "Billing",
-        url: "/dashboard/billing",
+        href: "/dashboard/billing",
         icon: CreditCard,
       },
       {
-        title: "Settings",
-        url: "/dashboard/settings",
-        icon: Settings,
+        title: "Notifications",
+        href: "/dashboard/notifications",
+        icon: Bell,
       },
     ],
   },
 ]
 
-export const adminItems = [
+export const adminNavigationItems: NavigationItem[] = [
   {
-    title: "Administration",
-    items: [
+    title: "Admin",
+    href: "/dashboard/admin",
+    icon: Settings,
+    children: [
       {
-        title: "User Management",
-        url: "/dashboard/admin/users",
+        title: "Users",
+        href: "/dashboard/admin/users",
         icon: Users,
       },
       {
-        title: "Plan Management",
-        url: "/dashboard/admin/plans",
-        icon: Shield,
+        title: "Plans",
+        href: "/dashboard/admin/plans",
+        icon: CreditCard,
       },
     ],
+  },
+  {
+    title: "Help",
+    href: "/dashboard/help",
+    icon: HelpCircle,
   },
 ]

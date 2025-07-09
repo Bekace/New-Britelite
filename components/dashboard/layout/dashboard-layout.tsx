@@ -1,7 +1,6 @@
 "use client"
 
-import type React from "react"
-import { useState } from "react"
+import React, { useState } from "react"
 import { DashboardProvider } from "../context/dashboard-context"
 import { DashboardSidebar } from "./dashboard-sidebar"
 import { DashboardHeader } from "./dashboard-header"
@@ -10,16 +9,14 @@ import { Sheet, SheetContent } from "@/components/ui/sheet"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
-  title?: string
-  description?: string
 }
 
-export function DashboardLayout({ children, title, description }: DashboardLayoutProps) {
+export const DashboardLayout = React.memo(({ children }: DashboardLayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
     <DashboardProvider>
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-background">
         {/* Desktop Sidebar */}
         <div className="hidden md:flex">
           <DashboardSidebar />
@@ -33,14 +30,18 @@ export function DashboardLayout({ children, title, description }: DashboardLayou
         </Sheet>
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <DashboardHeader title={title} description={description} onMenuClick={() => setSidebarOpen(true)} />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <DashboardHeader onMenuClick={() => setSidebarOpen(true)} />
 
-          <main className="flex-1 overflow-y-auto p-6">{children}</main>
+          <main className="flex-1 overflow-y-auto">
+            <div className="container mx-auto p-6">{children}</div>
+          </main>
 
           <DashboardFooter />
         </div>
       </div>
     </DashboardProvider>
   )
-}
+})
+
+DashboardLayout.displayName = "DashboardLayout"

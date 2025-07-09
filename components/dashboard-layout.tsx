@@ -1,20 +1,16 @@
 "use client"
 
 import type React from "react"
+
 import { DashboardLayout as ModularDashboardLayout } from "./dashboard"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
-  title?: string
-  description?: string
 }
 
-export function DashboardLayout({ children, title, description }: DashboardLayoutProps) {
-  return (
-    <ModularDashboardLayout title={title} description={description}>
-      {children}
-    </ModularDashboardLayout>
-  )
+export function DashboardLayout({ children }: DashboardLayoutProps) {
+  return <ModularDashboardLayout>{children}</ModularDashboardLayout>
 }
 
-export default DashboardLayout
+// Named export for compatibility
+export { DashboardLayout as default }

@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/auth"
 import { mediaQueries } from "@/lib/database"
-import { del } from "@vercel/blob"
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,23 +13,23 @@ export async function GET(request: NextRequest) {
     const folderId = searchParams.get("folderId")
     const search = searchParams.get("search")
 
-    const assets = await mediaQueries.getAssets(user.id, folderId || undefined, search || undefined)
+    const assets = await mediaQueries.getAssets({
+      userId: user.id,
+      folderId: folderId || undefined,
+      search: search || undefined,
+    })
 
-    // Parse metadata for each asset
-    const assetsWithParsedMetadata = assets.map((asset) => ({
+    // Add url field for compatibility
+    const assetsWithUrl = assets.map((asset) => ({
       ...asset,
+      url: asset.blob_url,
       metadata: typeof asset.metadata === "string" ? JSON.parse(asset.metadata) : asset.metadata,
     }))
 
-    return NextResponse.json({ assets: assetsWithParsedMetadata })
+    return NextResponse.json({ assets: assetsWithUrl })
   } catch (error) {
-    console.error("Get assets error:", error)
-    return NextResponse.json(
-      {
-        error: "Failed to fetch assets",
-      },
-      { status: 500 },
-    )
+    console.error("Error fetching assets:", error)
+    return NextResponse.json({ error: "Failed to fetch assets" }, { status: 500 })
   }
 }
 
@@ -42,40 +41,20 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const assetIds = searchParams.get("ids")?.split(",") || []
+    const ids = searchParams.get("ids")?.split(",") || []
 
-    if (assetIds.length === 0) {
+    if (ids.length === 0) {
       return NextResponse.json({ error: "No asset IDs provided" }, { status: 400 })
     }
 
-    const deletedAssets = []
-    for (const assetId of assetIds) {
-      const asset = await mediaQueries.deleteAsset(assetId, user.id)
-      if (asset) {
-        // Delete from Vercel Blob
-        try {
-          await del(asset.blob_url)
-          if (asset.thumbnail_url) {
-            await del(asset.thumbnail_url)
-          }
-        } catch (error) {
-          console.error("Failed to delete blob:", error)
-        }
-        deletedAssets.push(asset)
-      }
+    // Delete assets
+    for (const id of ids) {
+      await mediaQueries.deleteAsset(id, user.id)
     }
 
-    return NextResponse.json({
-      success: true,
-      deletedCount: deletedAssets.length,
-    })
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Delete assets error:", error)
-    return NextResponse.json(
-      {
-        error: "Failed to delete assets",
-      },
-      { status: 500 },
-    )
+    console.error("Error deleting assets:", error)
+    return NextResponse.json({ error: "Failed to delete assets" }, { status: 500 })
   }
 }

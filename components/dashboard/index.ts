@@ -1,3 +1,7 @@
 export { DashboardLayout } from "./layout/dashboard-layout"
 export { DashboardProvider, useDashboard } from "./context/dashboard-context"
-export { navigationItems, accountItems, adminItems } from "./config/navigation"
+export { DashboardSidebar } from "./layout/dashboard-sidebar"
+export { DashboardHeader } from "./layout/dashboard-header"
+export { DashboardFooter } from "./layout/dashboard-footer"
+export { navigationItems, adminNavigationItems } from "./config/navigation"
+export type { NavigationItem } from "./config/navigation"

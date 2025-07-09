@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const timestamp = Date.now()
     const randomString = Math.random().toString(36).substring(2, 15)
     const extension = file.name.split(".").pop()
-    const filename = `${timestamp}-${randomString}.${extension}`
+    const filename = `${user.id}/${timestamp}-${randomString}.${extension}`
 
     // Upload original file
     const fileBuffer = Buffer.from(await file.arrayBuffer())
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
         .jpeg({ quality: 80 })
         .toBuffer()
 
-      const thumbnailFilename = `thumb-${filename.replace(/\.[^/.]+$/, ".jpg")}`
+      const thumbnailFilename = `${user.id}/thumbnails/${timestamp}-${randomString}.jpg`
       const thumbnailBlob = await put(thumbnailFilename, thumbnailBuffer, {
         access: "public",
         contentType: "image/jpeg",
@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
       success: true,
       asset: {
         ...asset,
+        url: asset.blob_url, // Add url field for compatibility
         metadata: typeof asset.metadata === "string" ? JSON.parse(asset.metadata) : asset.metadata,
       },
     })
