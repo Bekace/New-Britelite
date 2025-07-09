@@ -1,7 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { DashboardProvider } from "../context/dashboard-context"
 import { DashboardSidebar } from "./dashboard-sidebar"
 import { DashboardHeader } from "./dashboard-header"
@@ -14,18 +15,18 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children, title, description }: DashboardLayoutProps) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-
   return (
     <DashboardProvider>
-      <div className="flex h-screen bg-background">
-        <DashboardSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <DashboardHeader title={title} description={description} />
-          <main className="flex-1 overflow-y-auto p-6">{children}</main>
-          <DashboardFooter />
-        </div>
-      </div>
+      <SidebarProvider>
+        <DashboardSidebar />
+        <SidebarInset>
+          <div className="flex min-h-screen flex-col">
+            <DashboardHeader title={title} description={description} />
+            <main className="flex-1 p-4">{children}</main>
+            <DashboardFooter />
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
     </DashboardProvider>
   )
 }

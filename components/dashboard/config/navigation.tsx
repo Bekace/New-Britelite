@@ -1,119 +1,100 @@
 import type React from "react"
-import {
-  LayoutDashboard,
-  ImageIcon,
-  Video,
-  Music,
-  FileText,
-  Monitor,
-  Calendar,
-  BarChart3,
-  Settings,
-  Users,
-  CreditCard,
-  HelpCircle,
-  Bell,
-  User,
-  Shield,
-} from "lucide-react"
+import { BarChart3, Bell, CreditCard, FileImage, HelpCircle, Home, Settings, Users, Zap } from "lucide-react"
 
 export interface NavigationItem {
   title: string
   href: string
   icon: React.ComponentType<{ className?: string }>
   badge?: string
-  adminOnly?: boolean
-  superAdminOnly?: boolean
+  roles?: ("user" | "admin" | "super_admin")[]
 }
 
-export const mainNavigationItems: NavigationItem[] = [
+export interface NavigationSection {
+  title: string
+  items: NavigationItem[]
+  roles?: ("user" | "admin" | "super_admin")[]
+}
+
+export const navigationConfig: NavigationSection[] = [
   {
-    title: "Overview",
-    href: "/dashboard",
-    icon: LayoutDashboard,
+    title: "Main",
+    items: [
+      {
+        title: "Dashboard",
+        href: "/dashboard",
+        icon: Home,
+      },
+      {
+        title: "Media Library",
+        href: "/dashboard/media",
+        icon: FileImage,
+      },
+      {
+        title: "Analytics",
+        href: "/dashboard/analytics",
+        icon: BarChart3,
+      },
+    ],
   },
   {
-    title: "Media Library",
-    href: "/dashboard/media",
-    icon: ImageIcon,
+    title: "Account",
+    items: [
+      {
+        title: "Profile",
+        href: "/dashboard/profile",
+        icon: Settings,
+      },
+      {
+        title: "Billing",
+        href: "/dashboard/billing",
+        icon: CreditCard,
+      },
+      {
+        title: "Notifications",
+        href: "/dashboard/notifications",
+        icon: Bell,
+      },
+      {
+        title: "Help & Support",
+        href: "/dashboard/help",
+        icon: HelpCircle,
+      },
+    ],
   },
   {
-    title: "Videos",
-    href: "/dashboard/videos",
-    icon: Video,
-    badge: "Soon",
-  },
-  {
-    title: "Audio",
-    href: "/dashboard/audio",
-    icon: Music,
-    badge: "Soon",
-  },
-  {
-    title: "Documents",
-    href: "/dashboard/documents",
-    icon: FileText,
-    badge: "Soon",
-  },
-  {
-    title: "Displays",
-    href: "/dashboard/displays",
-    icon: Monitor,
-    badge: "Soon",
-  },
-  {
-    title: "Playlists",
-    href: "/dashboard/playlists",
-    icon: Calendar,
-    badge: "Soon",
-  },
-  {
-    title: "Analytics",
-    href: "/dashboard/analytics",
-    icon: BarChart3,
-    badge: "Soon",
+    title: "Administration",
+    roles: ["admin", "super_admin"],
+    items: [
+      {
+        title: "User Management",
+        href: "/dashboard/admin/users",
+        icon: Users,
+        roles: ["admin", "super_admin"],
+      },
+      {
+        title: "Plan Management",
+        href: "/dashboard/admin/plans",
+        icon: Zap,
+        roles: ["super_admin"],
+      },
+    ],
   },
 ]
 
-export const accountNavigationItems: NavigationItem[] = [
-  {
-    title: "Profile",
-    href: "/dashboard/profile",
-    icon: User,
-  },
-  {
-    title: "Billing",
-    href: "/dashboard/billing",
-    icon: CreditCard,
-  },
-  {
-    title: "Settings",
-    href: "/dashboard/settings",
-    icon: Settings,
-  },
-  {
-    title: "Notifications",
-    href: "/dashboard/notifications",
-    icon: Bell,
-  },
-  {
-    title: "Help & Support",
-    href: "/dashboard/help",
-    icon: HelpCircle,
-  },
-]
+export function getFilteredNavigation(userRole: string | undefined): NavigationSection[] {
+  if (!userRole) return []
 
-export const adminNavigationItems: NavigationItem[] = [
-  {
-    title: "User Management",
-    href: "/dashboard/admin/users",
-    icon: Users,
-    adminOnly: true,
-  },
-  {
-    title: "Plan Management",
-    href: "/dashboard/admin/plans",
-    icon: Shield,
-    superAdminOnly: true,
-  },
-]
+  return navigationConfig
+    .filter((section) => {
+      if (!section.roles) return true
+      return section.roles.includes(userRole as any)
+    })
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (!item.roles) return true
+        return item.roles.includes(userRole as any)
+      }),
+    }))
+    .filter((section) => section.items.length > 0)
+}

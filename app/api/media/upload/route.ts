@@ -1,121 +1,61 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { put } from "@vercel/blob"
-import sharp from "sharp"
-import { getCurrentUser } from "@/lib/auth"
-import { mediaQueries } from "@/lib/database"
-
-const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+import { sql } from "@/lib/database"
+import { requireAuth } from "@/lib/auth"
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+    const user = await requireAuth()
 
     const formData = await request.formData()
-    const file = formData.get("file") as File
-    const folderId = formData.get("folderId") as string
+    const files = formData.getAll("files") as File[]
+    const folderId = formData.get("folderId") as string | null
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 })
+    if (!files || files.length === 0) {
+      return NextResponse.json({ error: "No files provided" }, { status: 400 })
     }
 
-    // Validate file type
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        {
-          error: "Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed.",
-        },
-        { status: 400 },
-      )
-    }
+    const uploadedAssets = []
 
-    // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        {
-          error: "File too large. Maximum size is 3MB.",
-        },
-        { status: 400 },
-      )
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now()
-    const randomString = Math.random().toString(36).substring(2, 15)
-    const extension = file.name.split(".").pop()
-    const filename = `${user.id}/${timestamp}-${randomString}.${extension}`
-
-    // Upload original file
-    const fileBuffer = Buffer.from(await file.arrayBuffer())
-    const blob = await put(filename, fileBuffer, {
-      access: "public",
-      contentType: file.type,
-    })
-
-    // Generate thumbnail
-    let thumbnailUrl = null
-    try {
-      const thumbnailBuffer = await sharp(fileBuffer)
-        .resize(300, 300, { fit: "cover" })
-        .jpeg({ quality: 80 })
-        .toBuffer()
-
-      const thumbnailFilename = `${user.id}/thumbnails/${timestamp}-${randomString}.jpg`
-      const thumbnailBlob = await put(thumbnailFilename, thumbnailBuffer, {
-        access: "public",
-        contentType: "image/jpeg",
-      })
-      thumbnailUrl = thumbnailBlob.url
-    } catch (error) {
-      console.error("Thumbnail generation failed:", error)
-    }
-
-    // Get image metadata
-    let metadata = {}
-    try {
-      const imageMetadata = await sharp(fileBuffer).metadata()
-      metadata = {
-        width: imageMetadata.width,
-        height: imageMetadata.height,
-        format: imageMetadata.format,
-        size: file.size,
+    for (const file of files) {
+      if (!file.name || file.size === 0) {
+        continue
       }
-    } catch (error) {
-      console.error("Metadata extraction failed:", error)
-    }
 
-    // Save to database
-    const asset = await mediaQueries.createAsset({
-      filename,
-      original_filename: file.name,
-      file_type: "image",
-      file_size: file.size,
-      mime_type: file.type,
-      blob_url: blob.url,
-      thumbnail_url: thumbnailUrl,
-      folder_id: folderId || undefined,
-      user_id: user.id,
-      metadata,
-    })
+      // Upload to Vercel Blob
+      const blob = await put(file.name, file, {
+        access: "public",
+      })
+
+      // Save to database
+      const result = await sql`
+        INSERT INTO media_assets (
+          user_id, folder_id, filename, original_filename, file_size, 
+          mime_type, storage_url, storage_key
+        ) VALUES (
+          ${user.id}, ${folderId}, ${blob.pathname}, ${file.name}, 
+          ${file.size}, ${file.type}, ${blob.url}, ${blob.pathname}
+        )
+        RETURNING *
+      `
+
+      uploadedAssets.push({
+        id: result[0].id,
+        filename: result[0].filename,
+        originalFilename: result[0].original_filename,
+        fileSize: result[0].file_size,
+        mimeType: result[0].mime_type,
+        storageUrl: result[0].storage_url,
+        createdAt: result[0].created_at,
+      })
+    }
 
     return NextResponse.json({
-      success: true,
-      asset: {
-        ...asset,
-        url: asset.blob_url, // Add url field for compatibility
-        metadata: typeof asset.metadata === "string" ? JSON.parse(asset.metadata) : asset.metadata,
-      },
+      message: "Files uploaded successfully",
+      assets: uploadedAssets,
     })
   } catch (error) {
     console.error("Upload error:", error)
-    return NextResponse.json(
-      {
-        error: "Upload failed. Please try again.",
-      },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: "Failed to upload files" }, { status: 500 })
   }
 }

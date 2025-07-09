@@ -1,18 +1,10 @@
 "use client"
 
-import React from "react"
 import { Bell, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { SidebarTrigger } from "@/components/ui/sidebar"
+import { Separator } from "@/components/ui/separator"
 import { useDashboard } from "../context/dashboard-context"
 
 interface DashboardHeaderProps {
@@ -20,68 +12,41 @@ interface DashboardHeaderProps {
   description?: string
 }
 
-export const DashboardHeader = React.memo(function DashboardHeader({ title, description }: DashboardHeaderProps) {
+export function DashboardHeader({ title, description }: DashboardHeaderProps) {
   const { user } = useDashboard()
 
   return (
-    <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center px-6">
-        <div className="flex-1">
+    <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+      <SidebarTrigger className="-ml-1" />
+      <Separator orientation="vertical" className="mr-2 h-4" />
+
+      <div className="flex flex-1 items-center justify-between">
+        <div className="flex flex-col">
           {title ? (
-            <div>
+            <>
               <h1 className="text-lg font-semibold">{title}</h1>
               {description && <p className="text-sm text-muted-foreground">{description}</p>}
-            </div>
+            </>
           ) : (
             <div>
-              <h1 className="text-lg font-semibold">Welcome back, {user?.first_name}!</h1>
-              <p className="text-sm text-muted-foreground">Here's what's happening with your digital signage today.</p>
+              <h1 className="text-lg font-semibold">Welcome back, {user?.firstName}!</h1>
+              <p className="text-sm text-muted-foreground">Manage your digital signage content and settings</p>
             </div>
           )}
         </div>
 
-        <div className="flex items-center space-x-4">
-          {/* Search */}
-          <div className="relative">
+        <div className="flex items-center gap-2">
+          <div className="relative hidden md:block">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input type="search" placeholder="Search..." className="w-[200px] pl-8 md:w-[300px]" />
+            <Input type="search" placeholder="Search..." className="w-64 pl-8" />
           </div>
 
-          {/* Notifications */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="relative">
-                <Bell className="h-4 w-4" />
-                <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs">
-                  3
-                </Badge>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">New media uploaded</p>
-                  <p className="text-xs text-muted-foreground">3 new images were added to your library</p>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">Display offline</p>
-                  <p className="text-xs text-muted-foreground">Display "Main Lobby" went offline 5 minutes ago</p>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">Storage warning</p>
-                  <p className="text-xs text-muted-foreground">You're using 85% of your storage quota</p>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button variant="ghost" size="sm" className="relative">
+            <Bell className="h-4 w-4" />
+            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500" />
+          </Button>
         </div>
       </div>
     </header>
   )
-})
+}

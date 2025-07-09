@@ -1,202 +1,135 @@
 "use client"
 
-import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LogOut, User, ChevronLeft, ChevronRight } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from "@/components/ui/sidebar"
 import { useDashboard } from "../context/dashboard-context"
-import { mainNavigationItems, accountNavigationItems, adminNavigationItems } from "../config/navigation"
+import { getFilteredNavigation } from "../config/navigation"
+import { LogOut, User } from "lucide-react"
 
-interface DashboardSidebarProps {
-  collapsed: boolean
-  onToggle: () => void
-}
-
-export const DashboardSidebar = React.memo(function DashboardSidebar({ collapsed, onToggle }: DashboardSidebarProps) {
+export function DashboardSidebar() {
   const { user, logout } = useDashboard()
   const pathname = usePathname()
 
-  if (!user) return null
-
-  const isAdmin = user.role === "admin" || user.role === "super_admin"
-  const isSuperAdmin = user.role === "super_admin"
-
-  const renderNavigationSection = (items: any[], title: string) => (
-    <div className="space-y-1">
-      {!collapsed && (
-        <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{title}</h3>
-      )}
-      {items.map((item) => {
-        // Filter admin-only items
-        if (item.adminOnly && !isAdmin) return null
-        if (item.superAdminOnly && !isSuperAdmin) return null
-
-        const isActive = pathname === item.href
-        const Icon = item.icon
-
-        return (
-          <Link key={item.href} href={item.href}>
-            <div
-              className={cn(
-                "flex items-center space-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-                isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground",
-                collapsed && "justify-center",
-              )}
-            >
-              <Icon className="h-4 w-4 flex-shrink-0" />
-              {!collapsed && (
-                <>
-                  <span className="flex-1">{item.title}</span>
-                  {item.badge && (
-                    <Badge variant="secondary" className="text-xs">
-                      {item.badge}
-                    </Badge>
-                  )}
-                </>
-              )}
-            </div>
-          </Link>
-        )
-      })}
-    </div>
-  )
+  const navigation = getFilteredNavigation(user?.role)
 
   return (
-    <div
-      className={cn(
-        "flex h-full flex-col border-r bg-background transition-all duration-300",
-        collapsed ? "w-16" : "w-64",
-      )}
-    >
-      {/* Header */}
-      <div className="flex h-16 items-center justify-between border-b px-4">
-        {!collapsed && (
-          <div className="flex items-center space-x-2">
-            <div className="h-8 w-8 rounded bg-primary flex items-center justify-center">
-              <span className="text-white font-bold text-sm">BL</span>
-            </div>
-            <span className="font-semibold">BriteLite</span>
+    <Sidebar>
+      <SidebarHeader className="border-b border-sidebar-border">
+        <div className="flex items-center gap-2 px-4 py-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <span className="text-sm font-bold">DS</span>
           </div>
-        )}
-        <Button variant="ghost" size="sm" onClick={onToggle}>
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
-      </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold">Digital Signage</span>
+            <span className="text-xs text-muted-foreground">Platform</span>
+          </div>
+        </div>
+      </SidebarHeader>
 
-      {/* Navigation */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-6">
-        {/* Main Navigation */}
-        {renderNavigationSection(mainNavigationItems, "Main")}
+      <SidebarContent>
+        <ScrollArea className="flex-1">
+          {navigation.map((section, index) => (
+            <div key={section.title}>
+              <SidebarGroup>
+                <SidebarGroupLabel
+                  className={
+                    section.title === "Administration" ? "text-orange-600 font-semibold flex items-center gap-2" : ""
+                  }
+                >
+                  {section.title}
+                  {section.title === "Administration" && (
+                    <Badge variant="secondary" className="bg-orange-100 text-orange-700 text-xs">
+                      Admin
+                    </Badge>
+                  )}
+                </SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {section.items.map((item) => {
+                      const isActive = pathname === item.href
+                      const isRestrictedToSuperAdmin =
+                        item.roles?.includes("super_admin") && !item.roles?.includes("admin")
 
-        {/* Account Section */}
-        <Separator />
-        {renderNavigationSection(accountNavigationItems, "Account")}
-
-        {/* Admin Section - Visually Separated */}
-        {isAdmin && (
-          <>
-            <Separator className="bg-orange-200" />
-            <div className="space-y-1">
-              {!collapsed && (
-                <div className="px-3 py-2 bg-orange-50 rounded-lg border border-orange-200">
-                  <h3 className="text-xs font-semibold text-orange-700 uppercase tracking-wider mb-1">
-                    Administration
-                  </h3>
-                  <p className="text-xs text-orange-600">Admin Tools & Management</p>
-                </div>
-              )}
-              {adminNavigationItems.map((item) => {
-                // Filter admin-only items
-                if (item.adminOnly && !isAdmin) return null
-                if (item.superAdminOnly && !isSuperAdmin) return null
-
-                const isActive = pathname === item.href
-                const Icon = item.icon
-
-                return (
-                  <Link key={item.href} href={item.href}>
-                    <div
-                      className={cn(
-                        "flex items-center space-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-orange-100 hover:text-orange-900",
-                        isActive ? "bg-orange-100 text-orange-900 border border-orange-200" : "text-orange-700",
-                        collapsed && "justify-center",
-                      )}
-                    >
-                      <Icon className="h-4 w-4 flex-shrink-0" />
-                      {!collapsed && (
-                        <>
-                          <span className="flex-1">{item.title}</span>
-                          {item.superAdminOnly && (
-                            <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
-                              Super Admin
-                            </Badge>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </Link>
-                )
-              })}
+                      return (
+                        <SidebarMenuItem key={item.href}>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={isActive}
+                            className={
+                              section.title === "Administration"
+                                ? "hover:bg-orange-50 data-[active=true]:bg-orange-100 data-[active=true]:text-orange-900"
+                                : ""
+                            }
+                          >
+                            <Link href={item.href} className="flex items-center gap-2">
+                              <item.icon className="h-4 w-4" />
+                              <span>{item.title}</span>
+                              {item.badge && (
+                                <Badge variant="secondary" className="ml-auto">
+                                  {item.badge}
+                                </Badge>
+                              )}
+                              {isRestrictedToSuperAdmin && (
+                                <Badge
+                                  variant="outline"
+                                  className="ml-auto bg-orange-50 text-orange-700 border-orange-200 text-xs"
+                                >
+                                  Super Admin
+                                </Badge>
+                              )}
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      )
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+              {index < navigation.length - 1 && section.title === "Account" && <Separator className="my-2" />}
             </div>
-          </>
-        )}
-      </div>
+          ))}
+        </ScrollArea>
+      </SidebarContent>
 
-      {/* User Menu */}
-      <div className="border-t p-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              className={cn("w-full justify-start space-x-3", collapsed && "justify-center px-2")}
-            >
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={user?.avatar_url || "/placeholder.svg"} />
-                <AvatarFallback>
-                  {user?.first_name?.[0]}
-                  {user?.last_name?.[0]}
-                </AvatarFallback>
-              </Avatar>
-              {!collapsed && (
-                <div className="flex flex-col items-start text-left">
-                  <span className="text-sm font-medium">
-                    {user?.first_name} {user?.last_name}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{user?.email}</span>
-                </div>
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/dashboard/profile">
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Log out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+      <SidebarFooter className="border-t border-sidebar-border">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <div className="flex items-center gap-2 px-2 py-1.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                <User className="h-4 w-4" />
+              </div>
+              <div className="flex flex-col flex-1 min-w-0">
+                <span className="text-sm font-medium truncate">
+                  {user?.firstName} {user?.lastName}
+                </span>
+                <span className="text-xs text-muted-foreground truncate">{user?.email}</span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={logout} className="h-8 w-8 p-0">
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+
+      <SidebarRail />
+    </Sidebar>
   )
-})
+}
