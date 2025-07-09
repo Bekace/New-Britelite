@@ -1,4 +1,4 @@
--- Create media folders table
+-- Create media_folders table
 CREATE TABLE IF NOT EXISTS media_folders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS media_folders (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create media assets table
+-- Create media_assets table
 CREATE TABLE IF NOT EXISTS media_assets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     filename VARCHAR(255) NOT NULL,
@@ -31,19 +31,15 @@ CREATE INDEX IF NOT EXISTS idx_media_folders_parent_id ON media_folders(parent_i
 CREATE INDEX IF NOT EXISTS idx_media_assets_user_id ON media_assets(user_id);
 CREATE INDEX IF NOT EXISTS idx_media_assets_folder_id ON media_assets(folder_id);
 CREATE INDEX IF NOT EXISTS idx_media_assets_file_type ON media_assets(file_type);
-CREATE INDEX IF NOT EXISTS idx_media_assets_created_at ON media_assets(created_at);
 
--- Add system settings table for configurable file size limits
-CREATE TABLE IF NOT EXISTS system_settings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    key VARCHAR(255) UNIQUE NOT NULL,
-    value TEXT NOT NULL,
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Add updated_at trigger for media_folders
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
 
--- Insert default file size limit (3MB)
-INSERT INTO system_settings (key, value, description) 
-VALUES ('max_file_size_mb', '3', 'Maximum file size in MB for uploads')
-ON CONFLICT (key) DO NOTHING;
+CREATE TRIGGER update_media_folders_updated_at BEFORE UPDATE ON media_folders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_media_assets_updated_at BEFORE UPDATE ON media_assets FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

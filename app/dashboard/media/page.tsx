@@ -6,11 +6,20 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { toast } from "sonner"
+import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
+import { toast } from "@/hooks/use-toast"
 import {
   Upload,
   Search,
@@ -19,11 +28,11 @@ import {
   FolderPlus,
   Folder,
   ImageIcon,
-  Trash2,
   MoreVertical,
-  ArrowLeft,
-  Eye,
+  Trash2,
   Download,
+  Eye,
+  X,
 } from "lucide-react"
 
 interface MediaAsset {
@@ -35,7 +44,13 @@ interface MediaAsset {
   mime_type: string
   blob_url: string
   thumbnail_url?: string
-  metadata: any
+  folder_id?: string
+  metadata: {
+    width?: number
+    height?: number
+    format?: string
+    size?: number
+  }
   created_at: string
 }
 
@@ -49,59 +64,67 @@ interface MediaFolder {
 export default function MediaLibraryPage() {
   const [assets, setAssets] = useState<MediaAsset[]>([])
   const [folders, setFolders] = useState<MediaFolder[]>([])
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [selectedAssets, setSelectedAssets] = useState<string[]>([])
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [currentFolder, setCurrentFolder] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [isUploading, setIsUploading] = useState(false)
-  const [showNewFolderDialog, setShowNewFolderDialog] = useState(false)
-  const [newFolderName, setNewFolderName] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [newFolderName, setNewFolderName] = useState("")
+  const [showNewFolderDialog, setShowNewFolderDialog] = useState(false)
 
-  const fetchData = useCallback(async () => {
+  const fetchAssets = useCallback(async () => {
     try {
-      setLoading(true)
+      const params = new URLSearchParams()
+      if (currentFolder) params.append("folderId", currentFolder)
+      if (searchQuery) params.append("search", searchQuery)
 
-      // Fetch folders
-      const foldersResponse = await fetch(`/api/media/folders${currentFolderId ? `?parentId=${currentFolderId}` : ""}`)
-      if (foldersResponse.ok) {
-        const foldersData = await foldersResponse.json()
-        setFolders(foldersData.folders)
-      }
-
-      // Fetch assets
-      const assetsResponse = await fetch(
-        `/api/media/assets${currentFolderId ? `?folderId=${currentFolderId}` : ""}${
-          searchQuery ? `${currentFolderId ? "&" : "?"}search=${encodeURIComponent(searchQuery)}` : ""
-        }`,
-      )
-      if (assetsResponse.ok) {
-        const assetsData = await assetsResponse.json()
-        setAssets(assetsData.assets)
+      const response = await fetch(`/api/media/assets?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setAssets(data.assets)
       }
     } catch (error) {
-      console.error("Error fetching data:", error)
-      toast.error("Failed to load media library")
-    } finally {
-      setLoading(false)
+      console.error("Failed to fetch assets:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load media assets",
+        variant: "destructive",
+      })
     }
-  }, [currentFolderId, searchQuery])
+  }, [currentFolder, searchQuery])
+
+  const fetchFolders = useCallback(async () => {
+    try {
+      const params = new URLSearchParams()
+      if (currentFolder) params.append("parentId", currentFolder)
+
+      const response = await fetch(`/api/media/folders?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setFolders(data.folders)
+      }
+    } catch (error) {
+      console.error("Failed to fetch folders:", error)
+    }
+  }, [currentFolder])
 
   useEffect(() => {
-    fetchData()
-  }, [fetchData])
+    const loadData = async () => {
+      setIsLoading(true)
+      await Promise.all([fetchAssets(), fetchFolders()])
+      setIsLoading(false)
+    }
+    loadData()
+  }, [fetchAssets, fetchFolders])
 
   const handleFileUpload = async (files: FileList) => {
-    if (files.length === 0) return
-
     setIsUploading(true)
     const uploadPromises = Array.from(files).map(async (file) => {
       const formData = new FormData()
       formData.append("file", file)
-      if (currentFolderId) {
-        formData.append("folderId", currentFolderId)
-      }
+      if (currentFolder) formData.append("folderId", currentFolder)
 
       const response = await fetch("/api/media/upload", {
         method: "POST",
@@ -118,11 +141,18 @@ export default function MediaLibraryPage() {
 
     try {
       await Promise.all(uploadPromises)
-      toast.success(`Successfully uploaded ${files.length} file(s)`)
-      fetchData()
+      toast({
+        title: "Success",
+        description: `${files.length} file(s) uploaded successfully`,
+      })
+      fetchAssets()
     } catch (error) {
       console.error("Upload error:", error)
-      toast.error(error instanceof Error ? error.message : "Upload failed")
+      toast({
+        title: "Upload Error",
+        description: error instanceof Error ? error.message : "Failed to upload files",
+        variant: "destructive",
+      })
     } finally {
       setIsUploading(false)
     }
@@ -131,14 +161,12 @@ export default function MediaLibraryPage() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const files = e.dataTransfer.files
-    handleFileUpload(files)
+    if (files.length > 0) {
+      handleFileUpload(files)
+    }
   }
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-  }
-
-  const createFolder = async () => {
+  const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return
 
     try {
@@ -147,41 +175,55 @@ export default function MediaLibraryPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newFolderName.trim(),
-          parentId: currentFolderId,
+          parentId: currentFolder,
         }),
       })
 
       if (response.ok) {
-        toast.success("Folder created successfully")
+        toast({
+          title: "Success",
+          description: "Folder created successfully",
+        })
         setNewFolderName("")
         setShowNewFolderDialog(false)
-        fetchData()
+        fetchFolders()
       } else {
         const error = await response.json()
-        toast.error(error.error || "Failed to create folder")
+        throw new Error(error.error)
       }
     } catch (error) {
-      console.error("Create folder error:", error)
-      toast.error("Failed to create folder")
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create folder",
+        variant: "destructive",
+      })
     }
   }
 
-  const deleteAssets = async (assetIds: string[]) => {
+  const handleDeleteAssets = async () => {
+    if (selectedAssets.length === 0) return
+
     try {
-      const response = await fetch(`/api/media/assets?ids=${assetIds.join(",")}`, {
+      const response = await fetch(`/api/media/assets?ids=${selectedAssets.join(",")}`, {
         method: "DELETE",
       })
 
       if (response.ok) {
-        toast.success(`Deleted ${assetIds.length} asset(s)`)
+        toast({
+          title: "Success",
+          description: `${selectedAssets.length} asset(s) deleted successfully`,
+        })
         setSelectedAssets([])
-        fetchData()
+        fetchAssets()
       } else {
-        toast.error("Failed to delete assets")
+        throw new Error("Failed to delete assets")
       }
     } catch (error) {
-      console.error("Delete error:", error)
-      toast.error("Failed to delete assets")
+      toast({
+        title: "Error",
+        description: "Failed to delete assets",
+        variant: "destructive",
+      })
     }
   }
 
@@ -203,69 +245,23 @@ export default function MediaLibraryPage() {
     })
   }
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          {currentFolderId && (
-            <Button variant="ghost" size="sm" onClick={() => setCurrentFolderId(null)}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-          )}
-          <h1 className="text-3xl font-bold">Media Library</h1>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Media Library</h1>
+          <p className="text-gray-600">Manage your digital assets</p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button variant="outline" size="sm" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
-            {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid3X3 className="h-4 w-4" />}
-          </Button>
-        </div>
-      </div>
-
-      {/* Upload Area */}
-      <Card>
-        <CardContent className="p-6">
-          <div
-            className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors"
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-          >
-            <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-            <p className="text-lg font-medium mb-2">{isUploading ? "Uploading..." : "Drag and drop files here"}</p>
-            <p className="text-gray-500 mb-4">or</p>
-            <Button
-              disabled={isUploading}
-              onClick={() => {
-                const input = document.createElement("input")
-                input.type = "file"
-                input.multiple = true
-                input.accept = "image/*"
-                input.onchange = (e) => {
-                  const files = (e.target as HTMLInputElement).files
-                  if (files) handleFileUpload(files)
-                }
-                input.click()
-              }}
-            >
-              Choose Files
-            </Button>
-            <p className="text-sm text-gray-500 mt-2">Supported formats: JPEG, PNG, GIF, WebP (Max 3MB each)</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Toolbar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search assets..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-64"
-            />
-          </div>
           <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm">
@@ -276,210 +272,314 @@ export default function MediaLibraryPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create New Folder</DialogTitle>
+                <DialogDescription>Enter a name for your new folder.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
-                <Input
-                  placeholder="Folder name"
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && createFolder()}
-                />
-                <div className="flex justify-end space-x-2">
-                  <Button variant="outline" onClick={() => setShowNewFolderDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={createFolder} disabled={!newFolderName.trim()}>
-                    Create
-                  </Button>
+                <div>
+                  <Label htmlFor="folderName">Folder Name</Label>
+                  <Input
+                    id="folderName"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    placeholder="Enter folder name"
+                  />
                 </div>
               </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowNewFolderDialog(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
+                  Create Folder
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
+          <Button onClick={() => document.getElementById("file-upload")?.click()} disabled={isUploading}>
+            <Upload className="h-4 w-4 mr-2" />
+            {isUploading ? "Uploading..." : "Upload Files"}
+          </Button>
+          <input
+            id="file-upload"
+            type="file"
+            multiple
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+          />
         </div>
-        {selectedAssets.length > 0 && (
-          <div className="flex items-center space-x-2">
-            <Badge variant="secondary">{selectedAssets.length} selected</Badge>
-            <Button variant="destructive" size="sm" onClick={() => deleteAssets(selectedAssets)}>
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete
-            </Button>
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="Search assets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 w-64"
+            />
           </div>
-        )}
+          {selectedAssets.length > 0 && (
+            <Button variant="destructive" size="sm" onClick={handleDeleteAssets}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete ({selectedAssets.length})
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center space-x-2">
+          <Button variant={viewMode === "grid" ? "default" : "outline"} size="sm" onClick={() => setViewMode("grid")}>
+            <Grid3X3 className="h-4 w-4" />
+          </Button>
+          <Button variant={viewMode === "list" ? "default" : "outline"} size="sm" onClick={() => setViewMode("list")}>
+            <List className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Upload Drop Zone */}
+      <div
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+        className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors"
+      >
+        <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <p className="text-lg font-medium text-gray-900 mb-2">Drop files here to upload</p>
+        <p className="text-gray-600">or click the Upload Files button above</p>
+        <p className="text-sm text-gray-500 mt-2">Supports: JPEG, PNG, GIF, WebP (max 3MB each)</p>
       </div>
 
       {/* Content */}
-      {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-2 text-gray-500">Loading...</p>
-        </div>
-      ) : (
-        <>
-          {/* Folders */}
-          {folders.length > 0 && (
+      <div className="space-y-4">
+        {/* Folders */}
+        {folders.length > 0 && (
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-3">Folders</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {folders.map((folder) => (
                 <Card
                   key={folder.id}
                   className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => setCurrentFolderId(folder.id)}
+                  onClick={() => setCurrentFolder(folder.id)}
                 >
                   <CardContent className="p-4 text-center">
-                    <Folder className="h-12 w-12 mx-auto text-blue-500 mb-2" />
+                    <Folder className="h-12 w-12 text-blue-500 mx-auto mb-2" />
                     <p className="text-sm font-medium truncate">{folder.name}</p>
                   </CardContent>
                 </Card>
               ))}
             </div>
-          )}
+            <Separator className="my-6" />
+          </div>
+        )}
 
-          {/* Assets */}
-          {assets.length > 0 ? (
-            <div className={viewMode === "grid" ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4" : "space-y-2"}>
-              {assets.map((asset) => (
-                <Card key={asset.id} className="group relative">
-                  <CardContent className={viewMode === "grid" ? "p-2" : "p-4"}>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        checked={selectedAssets.includes(asset.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setSelectedAssets([...selectedAssets, asset.id])
-                          } else {
-                            setSelectedAssets(selectedAssets.filter((id) => id !== asset.id))
-                          }
-                        }}
-                      />
-                      {viewMode === "grid" ? (
-                        <div className="flex-1">
-                          <div className="aspect-square relative mb-2">
-                            <img
-                              src={asset.thumbnail_url || asset.blob_url}
-                              alt={asset.original_filename}
-                              className="w-full h-full object-cover rounded"
-                            />
-                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all rounded flex items-center justify-center">
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={() => setPreviewAsset(asset)}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                          <p className="text-xs font-medium truncate">{asset.original_filename}</p>
-                          <p className="text-xs text-gray-500">{formatFileSize(asset.file_size)}</p>
-                        </div>
-                      ) : (
-                        <div className="flex-1 flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <img
-                              src={asset.thumbnail_url || asset.blob_url}
-                              alt={asset.original_filename}
-                              className="w-12 h-12 object-cover rounded"
-                            />
-                            <div>
-                              <p className="font-medium">{asset.original_filename}</p>
-                              <p className="text-sm text-gray-500">
-                                {formatFileSize(asset.file_size)} • {formatDate(asset.created_at)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Button variant="ghost" size="sm" onClick={() => setPreviewAsset(asset)}>
-                              <Eye className="h-4 w-4" />
+        {/* Assets */}
+        {assets.length > 0 ? (
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-3">Assets ({assets.length})</h3>
+            {viewMode === "grid" ? (
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {assets.map((asset) => (
+                  <Card key={asset.id} className="group relative">
+                    <CardContent className="p-2">
+                      <div className="absolute top-2 left-2 z-10">
+                        <Checkbox
+                          checked={selectedAssets.includes(asset.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedAssets([...selectedAssets, asset.id])
+                            } else {
+                              setSelectedAssets(selectedAssets.filter((id) => id !== asset.id))
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <MoreVertical className="h-4 w-4" />
                             </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent>
-                                <DropdownMenuItem onClick={() => window.open(asset.blob_url, "_blank")}>
-                                  <Download className="h-4 w-4 mr-2" />
-                                  Download
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => deleteAssets([asset.id])} className="text-red-600">
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            <DropdownMenuItem onClick={() => setPreviewAsset(asset)}>
+                              <Eye className="h-4 w-4 mr-2" />
+                              Preview
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <a href={asset.blob_url} download={asset.original_filename}>
+                                <Download className="h-4 w-4 mr-2" />
+                                Download
+                              </a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDeleteAssets()} className="text-red-600">
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                      <div
+                        className="aspect-square bg-gray-100 rounded-lg mb-2 cursor-pointer overflow-hidden"
+                        onClick={() => setPreviewAsset(asset)}
+                      >
+                        {asset.thumbnail_url ? (
+                          <img
+                            src={asset.thumbnail_url || "/placeholder.svg"}
+                            alt={asset.original_filename}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="h-8 w-8 text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs font-medium truncate">{asset.original_filename}</p>
+                      <p className="text-xs text-gray-500">{formatFileSize(asset.file_size)}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {assets.map((asset) => (
+                  <Card key={asset.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center space-x-4">
+                        <Checkbox
+                          checked={selectedAssets.includes(asset.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedAssets([...selectedAssets, asset.id])
+                            } else {
+                              setSelectedAssets(selectedAssets.filter((id) => id !== asset.id))
+                            }
+                          }}
+                        />
+                        <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                          {asset.thumbnail_url ? (
+                            <img
+                              src={asset.thumbnail_url || "/placeholder.svg"}
+                              alt={asset.original_filename}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <ImageIcon className="h-6 w-6 text-gray-400" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{asset.original_filename}</p>
+                          <div className="flex items-center space-x-4 text-sm text-gray-500">
+                            <span>{formatFileSize(asset.file_size)}</span>
+                            {asset.metadata.width && asset.metadata.height && (
+                              <span>
+                                {asset.metadata.width} × {asset.metadata.height}
+                              </span>
+                            )}
+                            <span>{formatDate(asset.created_at)}</span>
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <ImageIcon className="h-16 w-16 mx-auto text-gray-400 mb-4" />
-              <p className="text-lg font-medium text-gray-500">No assets found</p>
-              <p className="text-gray-400">Upload some files to get started</p>
-            </div>
-          )}
-        </>
-      )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            <DropdownMenuItem onClick={() => setPreviewAsset(asset)}>
+                              <Eye className="h-4 w-4 mr-2" />
+                              Preview
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <a href={asset.blob_url} download={asset.original_filename}>
+                                <Download className="h-4 w-4 mr-2" />
+                                Download
+                              </a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setSelectedAssets([asset.id])} className="text-red-600">
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <ImageIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No assets found</h3>
+            <p className="text-gray-600">Upload your first image to get started</p>
+          </div>
+        )}
+      </div>
 
       {/* Preview Dialog */}
       {previewAsset && (
         <Dialog open={!!previewAsset} onOpenChange={() => setPreviewAsset(null)}>
           <DialogContent className="max-w-4xl">
             <DialogHeader>
-              <DialogTitle>{previewAsset.original_filename}</DialogTitle>
+              <div className="flex items-center justify-between">
+                <DialogTitle>{previewAsset.original_filename}</DialogTitle>
+                <Button variant="ghost" size="sm" onClick={() => setPreviewAsset(null)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </DialogHeader>
             <div className="space-y-4">
               <div className="flex justify-center">
                 <img
                   src={previewAsset.blob_url || "/placeholder.svg"}
                   alt={previewAsset.original_filename}
-                  className="max-w-full max-h-96 object-contain rounded"
+                  className="max-w-full max-h-96 object-contain rounded-lg"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="font-medium">File Size:</p>
-                  <p className="text-gray-600">{formatFileSize(previewAsset.file_size)}</p>
+                  <Label>File Size</Label>
+                  <p>{formatFileSize(previewAsset.file_size)}</p>
                 </div>
                 <div>
-                  <p className="font-medium">Type:</p>
-                  <p className="text-gray-600">{previewAsset.mime_type}</p>
+                  <Label>Type</Label>
+                  <p>{previewAsset.mime_type}</p>
                 </div>
-                {previewAsset.metadata?.width && (
-                  <div>
-                    <p className="font-medium">Dimensions:</p>
-                    <p className="text-gray-600">
-                      {previewAsset.metadata.width} × {previewAsset.metadata.height}
-                    </p>
-                  </div>
+                {previewAsset.metadata.width && previewAsset.metadata.height && (
+                  <>
+                    <div>
+                      <Label>Dimensions</Label>
+                      <p>
+                        {previewAsset.metadata.width} × {previewAsset.metadata.height} pixels
+                      </p>
+                    </div>
+                    <div>
+                      <Label>Format</Label>
+                      <p>{previewAsset.metadata.format?.toUpperCase()}</p>
+                    </div>
+                  </>
                 )}
                 <div>
-                  <p className="font-medium">Uploaded:</p>
-                  <p className="text-gray-600">{formatDate(previewAsset.created_at)}</p>
+                  <Label>Uploaded</Label>
+                  <p>{formatDate(previewAsset.created_at)}</p>
                 </div>
               </div>
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => window.open(previewAsset.blob_url, "_blank")}>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" asChild>
+                <a href={previewAsset.blob_url} download={previewAsset.original_filename}>
                   <Download className="h-4 w-4 mr-2" />
                   Download
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    deleteAssets([previewAsset.id])
-                    setPreviewAsset(null)
-                  }}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
-              </div>
-            </div>
+                </a>
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}

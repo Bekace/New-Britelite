@@ -2,42 +2,42 @@ import { type NextRequest, NextResponse } from "next/server"
 import { put } from "@vercel/blob"
 import sharp from "sharp"
 import { getCurrentUser } from "@/lib/auth"
-import { mediaQueries, systemQueries } from "@/lib/database"
+import { mediaQueries } from "@/lib/database"
 
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
-const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB default
+const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser(request)
+    const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const formData = await request.formData()
     const file = formData.get("file") as File
-    const folderId = formData.get("folderId") as string | null
+    const folderId = formData.get("folderId") as string
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    // Get configurable file size limit
-    const maxFileSizeMB = await systemQueries.getSetting("max_file_size_mb")
-    const maxFileSize = maxFileSizeMB ? Number.parseInt(maxFileSizeMB) * 1024 * 1024 : MAX_FILE_SIZE
-
-    // Validate file size
-    if (file.size > maxFileSize) {
+    // Validate file type
+    if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
-        { error: `File size exceeds ${Math.floor(maxFileSize / 1024 / 1024)}MB limit` },
+        {
+          error: "Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed.",
+        },
         { status: 400 },
       )
     }
 
-    // Validate file type (Phase 1: Images only)
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: "Only image files (JPEG, PNG, GIF, WebP) are supported in Phase 1" },
+        {
+          error: "File too large. Maximum size is 3MB.",
+        },
         { status: 400 },
       )
     }
@@ -45,54 +45,46 @@ export async function POST(request: NextRequest) {
     // Generate unique filename
     const timestamp = Date.now()
     const randomString = Math.random().toString(36).substring(2, 15)
-    const fileExtension = file.name.split(".").pop()
-    const filename = `${user.id}/${timestamp}-${randomString}.${fileExtension}`
+    const extension = file.name.split(".").pop()
+    const filename = `${timestamp}-${randomString}.${extension}`
 
-    // Convert file to buffer
-    const buffer = Buffer.from(await file.arrayBuffer())
-
-    // Upload original file to Vercel Blob
-    const blob = await put(filename, buffer, {
+    // Upload original file
+    const fileBuffer = Buffer.from(await file.arrayBuffer())
+    const blob = await put(filename, fileBuffer, {
       access: "public",
       contentType: file.type,
     })
 
-    // Generate thumbnail for images
-    let thumbnailUrl: string | undefined
-    if (ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      try {
-        const thumbnailBuffer = await sharp(buffer)
-          .resize(300, 300, { fit: "inside", withoutEnlargement: true })
-          .jpeg({ quality: 80 })
-          .toBuffer()
+    // Generate thumbnail
+    let thumbnailUrl = null
+    try {
+      const thumbnailBuffer = await sharp(fileBuffer)
+        .resize(300, 300, { fit: "cover" })
+        .jpeg({ quality: 80 })
+        .toBuffer()
 
-        const thumbnailFilename = `${user.id}/thumbnails/${timestamp}-${randomString}.jpg`
-        const thumbnailBlob = await put(thumbnailFilename, thumbnailBuffer, {
-          access: "public",
-          contentType: "image/jpeg",
-        })
-        thumbnailUrl = thumbnailBlob.url
-      } catch (error) {
-        console.error("Error generating thumbnail:", error)
-        // Continue without thumbnail if generation fails
-      }
+      const thumbnailFilename = `thumb-${filename.replace(/\.[^/.]+$/, ".jpg")}`
+      const thumbnailBlob = await put(thumbnailFilename, thumbnailBuffer, {
+        access: "public",
+        contentType: "image/jpeg",
+      })
+      thumbnailUrl = thumbnailBlob.url
+    } catch (error) {
+      console.error("Thumbnail generation failed:", error)
     }
 
-    // Extract metadata
-    let metadata: any = {}
-    if (ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      try {
-        const imageMetadata = await sharp(buffer).metadata()
-        metadata = {
-          width: imageMetadata.width,
-          height: imageMetadata.height,
-          format: imageMetadata.format,
-          density: imageMetadata.density,
-          hasAlpha: imageMetadata.hasAlpha,
-        }
-      } catch (error) {
-        console.error("Error extracting metadata:", error)
+    // Get image metadata
+    let metadata = {}
+    try {
+      const imageMetadata = await sharp(fileBuffer).metadata()
+      metadata = {
+        width: imageMetadata.width,
+        height: imageMetadata.height,
+        format: imageMetadata.format,
+        size: file.size,
       }
+    } catch (error) {
+      console.error("Metadata extraction failed:", error)
     }
 
     // Save to database
@@ -112,20 +104,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       asset: {
-        id: asset.id,
-        filename: asset.filename,
-        original_filename: asset.original_filename,
-        file_type: asset.file_type,
-        file_size: asset.file_size,
-        mime_type: asset.mime_type,
-        blob_url: asset.blob_url,
-        thumbnail_url: asset.thumbnail_url,
+        ...asset,
         metadata: typeof asset.metadata === "string" ? JSON.parse(asset.metadata) : asset.metadata,
-        created_at: asset.created_at,
       },
     })
   } catch (error) {
     console.error("Upload error:", error)
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Upload failed. Please try again.",
+      },
+      { status: 500 },
+    )
   }
 }
