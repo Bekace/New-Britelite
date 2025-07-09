@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,7 +18,7 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { toast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import {
   Upload,
   Search,
@@ -33,6 +32,7 @@ import {
   Download,
   Eye,
   X,
+  ArrowLeft,
 } from "lucide-react"
 
 interface MediaAsset {
@@ -73,6 +73,7 @@ export default function MediaLibraryPage() {
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null)
   const [newFolderName, setNewFolderName] = useState("")
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
 
   const fetchAssets = useCallback(async () => {
     try {
@@ -83,15 +84,13 @@ export default function MediaLibraryPage() {
       const response = await fetch(`/api/media/assets?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setAssets(data.assets)
+        setAssets(data.assets || [])
+      } else {
+        throw new Error("Failed to fetch assets")
       }
     } catch (error) {
       console.error("Failed to fetch assets:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load media assets",
-        variant: "destructive",
-      })
+      toast.error("Failed to load media assets")
     }
   }, [currentFolder, searchQuery])
 
@@ -103,10 +102,13 @@ export default function MediaLibraryPage() {
       const response = await fetch(`/api/media/folders?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setFolders(data.folders)
+        setFolders(data.folders || [])
+      } else {
+        throw new Error("Failed to fetch folders")
       }
     } catch (error) {
       console.error("Failed to fetch folders:", error)
+      toast.error("Failed to load folders")
     }
   }, [currentFolder])
 
@@ -120,6 +122,8 @@ export default function MediaLibraryPage() {
   }, [fetchAssets, fetchFolders])
 
   const handleFileUpload = async (files: FileList) => {
+    if (!files || files.length === 0) return
+
     setIsUploading(true)
     const uploadPromises = Array.from(files).map(async (file) => {
       const formData = new FormData()
@@ -141,18 +145,11 @@ export default function MediaLibraryPage() {
 
     try {
       await Promise.all(uploadPromises)
-      toast({
-        title: "Success",
-        description: `${files.length} file(s) uploaded successfully`,
-      })
-      fetchAssets()
+      toast.success(`Successfully uploaded ${files.length} file(s)`)
+      await fetchAssets()
     } catch (error) {
       console.error("Upload error:", error)
-      toast({
-        title: "Upload Error",
-        description: error instanceof Error ? error.message : "Failed to upload files",
-        variant: "destructive",
-      })
+      toast.error(error instanceof Error ? error.message : "Upload failed")
     } finally {
       setIsUploading(false)
     }
@@ -160,10 +157,21 @@ export default function MediaLibraryPage() {
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
+    setDragActive(false)
     const files = e.dataTransfer.files
     if (files.length > 0) {
       handleFileUpload(files)
     }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragActive(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragActive(false)
   }
 
   const handleCreateFolder = async () => {
@@ -180,50 +188,38 @@ export default function MediaLibraryPage() {
       })
 
       if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Folder created successfully",
-        })
+        toast.success("Folder created successfully")
         setNewFolderName("")
         setShowNewFolderDialog(false)
-        fetchFolders()
+        await fetchFolders()
       } else {
         const error = await response.json()
-        throw new Error(error.error)
+        throw new Error(error.error || "Failed to create folder")
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create folder",
-        variant: "destructive",
-      })
+      console.error("Create folder error:", error)
+      toast.error(error instanceof Error ? error.message : "Failed to create folder")
     }
   }
 
-  const handleDeleteAssets = async () => {
-    if (selectedAssets.length === 0) return
+  const handleDeleteAssets = async (assetIds: string[]) => {
+    if (assetIds.length === 0) return
 
     try {
-      const response = await fetch(`/api/media/assets?ids=${selectedAssets.join(",")}`, {
+      const response = await fetch(`/api/media/assets?ids=${assetIds.join(",")}`, {
         method: "DELETE",
       })
 
       if (response.ok) {
-        toast({
-          title: "Success",
-          description: `${selectedAssets.length} asset(s) deleted successfully`,
-        })
+        toast.success(`Deleted ${assetIds.length} asset(s)`)
         setSelectedAssets([])
-        fetchAssets()
+        await fetchAssets()
       } else {
         throw new Error("Failed to delete assets")
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete assets",
-        variant: "destructive",
-      })
+      console.error("Delete error:", error)
+      toast.error("Failed to delete assets")
     }
   }
 
@@ -257,9 +253,17 @@ export default function MediaLibraryPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Media Library</h1>
-          <p className="text-gray-600">Manage your digital assets</p>
+        <div className="flex items-center space-x-4">
+          {currentFolder && (
+            <Button variant="ghost" size="sm" onClick={() => setCurrentFolder(null)}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Root
+            </Button>
+          )}
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Media Library</h1>
+            <p className="text-gray-600">Manage your digital assets</p>
+          </div>
         </div>
         <div className="flex items-center space-x-2">
           <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
@@ -282,6 +286,11 @@ export default function MediaLibraryPage() {
                     value={newFolderName}
                     onChange={(e) => setNewFolderName(e.target.value)}
                     placeholder="Enter folder name"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleCreateFolder()
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -323,7 +332,7 @@ export default function MediaLibraryPage() {
             />
           </div>
           {selectedAssets.length > 0 && (
-            <Button variant="destructive" size="sm" onClick={handleDeleteAssets}>
+            <Button variant="destructive" size="sm" onClick={() => handleDeleteAssets(selectedAssets)}>
               <Trash2 className="h-4 w-4 mr-2" />
               Delete ({selectedAssets.length})
             </Button>
@@ -342,11 +351,16 @@ export default function MediaLibraryPage() {
       {/* Upload Drop Zone */}
       <div
         onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
-        className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+          dragActive ? "border-blue-400 bg-blue-50" : "border-gray-300 hover:border-gray-400"
+        }`}
       >
         <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-        <p className="text-lg font-medium text-gray-900 mb-2">Drop files here to upload</p>
+        <p className="text-lg font-medium text-gray-900 mb-2">
+          {dragActive ? "Drop files here" : "Drop files here to upload"}
+        </p>
         <p className="text-gray-600">or click the Upload Files button above</p>
         <p className="text-sm text-gray-500 mt-2">Supports: JPEG, PNG, GIF, WebP (max 3MB each)</p>
       </div>
@@ -414,7 +428,7 @@ export default function MediaLibraryPage() {
                                 Download
                               </a>
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDeleteAssets()} className="text-red-600">
+                            <DropdownMenuItem onClick={() => handleDeleteAssets([asset.id])} className="text-red-600">
                               <Trash2 className="h-4 w-4 mr-2" />
                               Delete
                             </DropdownMenuItem>
@@ -425,9 +439,9 @@ export default function MediaLibraryPage() {
                         className="aspect-square bg-gray-100 rounded-lg mb-2 cursor-pointer overflow-hidden"
                         onClick={() => setPreviewAsset(asset)}
                       >
-                        {asset.thumbnail_url ? (
+                        {asset.thumbnail_url || asset.blob_url ? (
                           <img
-                            src={asset.thumbnail_url || "/placeholder.svg"}
+                            src={asset.thumbnail_url || asset.blob_url}
                             alt={asset.original_filename}
                             className="w-full h-full object-cover"
                           />
@@ -460,9 +474,9 @@ export default function MediaLibraryPage() {
                           }}
                         />
                         <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-                          {asset.thumbnail_url ? (
+                          {asset.thumbnail_url || asset.blob_url ? (
                             <img
-                              src={asset.thumbnail_url || "/placeholder.svg"}
+                              src={asset.thumbnail_url || asset.blob_url}
                               alt={asset.original_filename}
                               className="w-full h-full object-cover"
                             />
@@ -501,7 +515,7 @@ export default function MediaLibraryPage() {
                                 Download
                               </a>
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setSelectedAssets([asset.id])} className="text-red-600">
+                            <DropdownMenuItem onClick={() => handleDeleteAssets([asset.id])} className="text-red-600">
                               <Trash2 className="h-4 w-4 mr-2" />
                               Delete
                             </DropdownMenuItem>

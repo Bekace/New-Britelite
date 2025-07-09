@@ -1,111 +1,106 @@
+import type React from "react"
 import {
-  Monitor,
+  LayoutDashboard,
   ImageIcon,
-  Play,
-  Users,
-  BarChart3,
-  CreditCard,
-  Building,
-  Shield,
-  Home,
-  Upload,
+  Video,
+  FileText,
+  Monitor,
   Calendar,
-  Activity,
+  BarChart3,
   Settings,
+  Users,
+  CreditCard,
+  Bell,
+  HelpCircle,
+  User,
 } from "lucide-react"
 
-export const navigationItems = [
+export interface NavigationItem {
+  title: string
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+  badge?: string
+  adminOnly?: boolean
+}
+
+export const navigationItems: NavigationItem[] = [
   {
     title: "Overview",
-    items: [
-      {
-        title: "Dashboard",
-        url: "/dashboard",
-        icon: Home,
-      },
-      {
-        title: "Analytics",
-        url: "/dashboard/analytics",
-        icon: BarChart3,
-      },
-    ],
+    href: "/dashboard",
+    icon: LayoutDashboard,
   },
   {
-    title: "Content Management",
-    items: [
-      {
-        title: "Media Library",
-        url: "/dashboard/media",
-        icon: ImageIcon,
-      },
-      {
-        title: "Playlists",
-        url: "/dashboard/playlists",
-        icon: Play,
-      },
-      {
-        title: "Upload",
-        url: "/dashboard/upload",
-        icon: Upload,
-      },
-    ],
+    title: "Media Library",
+    href: "/dashboard/media",
+    icon: ImageIcon,
   },
   {
-    title: "Display Management",
-    items: [
-      {
-        title: "Screens",
-        url: "/dashboard/screens",
-        icon: Monitor,
-      },
-      {
-        title: "Scheduling",
-        url: "/dashboard/scheduling",
-        icon: Calendar,
-      },
-      {
-        title: "Activity",
-        url: "/dashboard/activity",
-        icon: Activity,
-      },
-    ],
+    title: "Videos",
+    href: "/dashboard/videos",
+    icon: Video,
+    badge: "Soon",
   },
   {
-    title: "Account",
-    items: [
-      {
-        title: "Profile",
-        url: "/dashboard/profile",
-        icon: Building,
-      },
-      {
-        title: "Billing",
-        url: "/dashboard/billing",
-        icon: CreditCard,
-      },
-      {
-        title: "Settings",
-        url: "/dashboard/settings",
-        icon: Settings,
-      },
-    ],
+    title: "Content",
+    href: "/dashboard/content",
+    icon: FileText,
+  },
+  {
+    title: "Displays",
+    href: "/dashboard/displays",
+    icon: Monitor,
+  },
+  {
+    title: "Scheduling",
+    href: "/dashboard/scheduling",
+    icon: Calendar,
+  },
+  {
+    title: "Analytics",
+    href: "/dashboard/analytics",
+    icon: BarChart3,
+  },
+  {
+    title: "Settings",
+    href: "/dashboard/settings",
+    icon: Settings,
   },
 ]
 
-export const adminItems = [
+export const accountItems: NavigationItem[] = [
   {
-    title: "Administration",
-    items: [
-      {
-        title: "User Management",
-        url: "/dashboard/admin/users",
-        icon: Users,
-      },
-      {
-        title: "Plan Management",
-        url: "/dashboard/admin/plans",
-        icon: Shield,
-      },
-    ],
+    title: "Profile",
+    href: "/dashboard/profile",
+    icon: User,
+  },
+  {
+    title: "Billing",
+    href: "/dashboard/billing",
+    icon: CreditCard,
+  },
+  {
+    title: "Notifications",
+    href: "/dashboard/notifications",
+    icon: Bell,
+  },
+  {
+    title: "Help & Support",
+    href: "/dashboard/help",
+    icon: HelpCircle,
+  },
+]
+
+export const adminItems: NavigationItem[] = [
+  {
+    title: "User Management",
+    href: "/dashboard/admin/users",
+    icon: Users,
+    adminOnly: true,
+  },
+  {
+    title: "Plan Management",
+    href: "/dashboard/admin/plans",
+    icon: CreditCard,
+    adminOnly: true,
   },
 ]

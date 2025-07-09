@@ -1,15 +1,14 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { createContext, useContext, useEffect, useState } from "react"
 
 interface User {
   id: string
   email: string
   first_name: string
   last_name: string
-  role: "user" | "admin"
+  role: string
   business_name?: string
   avatar_url?: string
   plan_name?: string
@@ -18,7 +17,7 @@ interface User {
 interface DashboardContextType {
   user: User | null
   isLoading: boolean
-  logout: () => Promise<void>
+  logout: () => void
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
@@ -26,34 +25,31 @@ const DashboardContext = createContext<DashboardContextType | undefined>(undefin
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const router = useRouter()
 
   useEffect(() => {
-    const checkAuth = async () => {
+    const fetchUser = async () => {
       try {
         const response = await fetch("/api/auth/me")
         if (response.ok) {
           const userData = await response.json()
           setUser(userData.user)
-        } else {
-          router.push("/auth/login")
         }
       } catch (error) {
-        router.push("/auth/login")
+        console.error("Failed to fetch user:", error)
       } finally {
         setIsLoading(false)
       }
     }
 
-    checkAuth()
-  }, [router])
+    fetchUser()
+  }, [])
 
   const logout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" })
-      router.push("/auth/login")
+      window.location.href = "/auth/login"
     } catch (error) {
-      console.error("Logout error:", error)
+      console.error("Logout failed:", error)
     }
   }
 
