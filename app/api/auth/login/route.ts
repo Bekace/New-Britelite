@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 401 })
     }
 
+    // Create response and set cookie
     const response = NextResponse.json({
       success: true,
       user: result.user,
@@ -22,15 +23,13 @@ export async function POST(request: NextRequest) {
     })
 
     // Set session cookie
-    if (result.token) {
-      response.cookies.set("session", result.token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-        path: "/",
-      })
-    }
+    response.cookies.set("session", result.token!, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+      path: "/",
+    })
 
     return response
   } catch (error) {

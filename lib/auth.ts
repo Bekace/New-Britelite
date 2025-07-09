@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import crypto from "crypto"
 import { userQueries, sessionQueries, auditQueries } from "./database"
+import { cookies } from "next/headers"
 
 if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET environment variable is required")
@@ -267,13 +268,11 @@ export const requireAdmin = (user: User | null): boolean => {
   return user?.role === "admin" || user?.role === "super_admin"
 }
 
-export const getCurrentUser = async (request: Request): Promise<User | null> => {
+// Updated getCurrentUser function for Next.js 13+ App Router
+export const getCurrentUser = async (): Promise<User | null> => {
   try {
-    const sessionToken = request.headers
-      .get("cookie")
-      ?.split(";")
-      .find((c) => c.trim().startsWith("session="))
-      ?.split("=")[1]
+    const cookieStore = await cookies()
+    const sessionToken = cookieStore.get("session")?.value
 
     if (!sessionToken) {
       return null

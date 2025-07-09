@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     const { name, parentId } = await request.json()
 
-    if (!name || !name.trim()) {
+    if (!name || name.trim().length === 0) {
       return NextResponse.json({ error: "Folder name is required" }, { status: 400 })
     }
 
@@ -43,9 +43,32 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
     })
 
-    return NextResponse.json({ folder })
+    return NextResponse.json({ success: true, folder })
   } catch (error) {
     console.error("Error creating folder:", error)
     return NextResponse.json({ error: "Failed to create folder" }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get("id")
+
+    if (!id) {
+      return NextResponse.json({ error: "Folder ID is required" }, { status: 400 })
+    }
+
+    await mediaQueries.deleteFolder(id, user.id)
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Error deleting folder:", error)
+    return NextResponse.json({ error: "Failed to delete folder" }, { status: 500 })
   }
 }

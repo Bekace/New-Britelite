@@ -9,9 +9,11 @@ import { DashboardFooter } from "./dashboard-footer"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
+  title?: string
+  description?: string
 }
 
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function DashboardLayout({ children, title, description }: DashboardLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   return (
@@ -19,7 +21,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <div className="flex h-screen bg-background">
         <DashboardSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
         <div className="flex flex-1 flex-col overflow-hidden">
-          <DashboardHeader />
+          <DashboardHeader title={title} description={description} />
           <main className="flex-1 overflow-y-auto p-6">{children}</main>
           <DashboardFooter />
         </div>
