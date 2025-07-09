@@ -4,7 +4,7 @@ import { mediaQueries } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -12,18 +12,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const parentId = searchParams.get("parentId")
 
-    const folders = await mediaQueries.getFolders(user.id, parentId === "null" ? null : parentId || undefined)
+    const folders = await mediaQueries.getFoldersByUser(user.id, parentId || undefined)
 
     return NextResponse.json({ folders })
   } catch (error) {
-    console.error("Error fetching folders:", error)
-    return NextResponse.json({ error: "Failed to fetch folders" }, { status: 500 })
+    console.error("Get folders error:", error)
+    return NextResponse.json(
+      {
+        error: "Failed to fetch folders",
+      },
+      { status: 500 },
+    )
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -36,20 +41,29 @@ export async function POST(request: NextRequest) {
 
     const folder = await mediaQueries.createFolder({
       name: name.trim(),
-      parent_id: parentId || null,
+      parent_id: parentId || undefined,
       user_id: user.id,
     })
 
-    return NextResponse.json({ folder })
+    return NextResponse.json({
+      success: true,
+      folder,
+      message: "Folder created successfully",
+    })
   } catch (error) {
-    console.error("Error creating folder:", error)
-    return NextResponse.json({ error: "Failed to create folder" }, { status: 500 })
+    console.error("Create folder error:", error)
+    return NextResponse.json(
+      {
+        error: "Failed to create folder",
+      },
+      { status: 500 },
+    )
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -63,9 +77,17 @@ export async function DELETE(request: NextRequest) {
 
     await mediaQueries.deleteFolder(folderId, user.id)
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      message: "Folder deleted successfully",
+    })
   } catch (error) {
-    console.error("Error deleting folder:", error)
-    return NextResponse.json({ error: "Failed to delete folder" }, { status: 500 })
+    console.error("Delete folder error:", error)
+    return NextResponse.json(
+      {
+        error: "Failed to delete folder",
+      },
+      { status: 500 },
+    )
   }
 }

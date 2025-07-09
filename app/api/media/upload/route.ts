@@ -1,16 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { put } from "@vercel/blob"
-import { getCurrentUser } from "@/lib/auth"
-import { mediaQueries, systemQueries } from "@/lib/database"
 import sharp from "sharp"
+import { getCurrentUser } from "@/lib/auth"
+import { mediaQueries } from "@/lib/database"
 
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"]
-
-const MAX_FILE_SIZE_DEFAULT = 3 * 1024 * 1024 // 3MB in bytes
+const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -23,25 +22,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    // Get max file size from system settings
-    const maxFileSizeMB = await systemQueries.getSetting("max_file_size_mb")
-    const maxFileSize = maxFileSizeMB ? Number.parseInt(maxFileSizeMB) * 1024 * 1024 : MAX_FILE_SIZE_DEFAULT
-
-    // Validate file size
-    if (file.size > maxFileSize) {
+    // Validate file type
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       return NextResponse.json(
         {
-          error: `File size exceeds maximum limit of ${Math.round(maxFileSize / 1024 / 1024)}MB`,
+          error: "Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed.",
         },
         { status: 400 },
       )
     }
 
-    // Validate file type (Phase 1: Images only)
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         {
-          error: "Only image files (JPEG, PNG, GIF, WebP) are supported in this phase",
+          error: `File size too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB.`,
         },
         { status: 400 },
       )
@@ -51,55 +46,47 @@ export async function POST(request: NextRequest) {
     const timestamp = Date.now()
     const randomString = Math.random().toString(36).substring(2, 15)
     const fileExtension = file.name.split(".").pop()
-    const filename = `${user.id}/${timestamp}-${randomString}.${fileExtension}`
+    const filename = `${timestamp}-${randomString}.${fileExtension}`
 
     // Upload original file to Vercel Blob
     const blob = await put(filename, file, {
       access: "public",
+      addRandomSuffix: false,
     })
 
     // Generate thumbnail for images
-    let thumbnailUrl = null
-    if (ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      try {
-        const buffer = await file.arrayBuffer()
-        const thumbnailBuffer = await sharp(Buffer.from(buffer))
-          .resize(300, 300, {
-            fit: "cover",
-            position: "center",
-          })
-          .jpeg({ quality: 80 })
-          .toBuffer()
+    let thumbnailUrl: string | undefined
+    try {
+      const buffer = await file.arrayBuffer()
+      const thumbnailBuffer = await sharp(Buffer.from(buffer))
+        .resize(300, 300, { fit: "cover" })
+        .jpeg({ quality: 80 })
+        .toBuffer()
 
-        const thumbnailBlob = new Blob([thumbnailBuffer], { type: "image/jpeg" })
-        const thumbnailFilename = `${user.id}/thumbnails/${timestamp}-${randomString}.jpg`
-
-        const thumbnailUpload = await put(thumbnailFilename, thumbnailBlob, {
-          access: "public",
-        })
-
-        thumbnailUrl = thumbnailUpload.url
-      } catch (error) {
-        console.error("Error generating thumbnail:", error)
-        // Continue without thumbnail if generation fails
-      }
+      const thumbnailBlob = await put(`thumb-${filename}`, thumbnailBuffer, {
+        access: "public",
+        addRandomSuffix: false,
+        contentType: "image/jpeg",
+      })
+      thumbnailUrl = thumbnailBlob.url
+    } catch (error) {
+      console.error("Thumbnail generation failed:", error)
     }
 
-    // Get image metadata
-    let metadata = {}
-    if (ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      try {
-        const buffer = await file.arrayBuffer()
-        const imageInfo = await sharp(Buffer.from(buffer)).metadata()
-        metadata = {
-          width: imageInfo.width,
-          height: imageInfo.height,
-          format: imageInfo.format,
-          hasAlpha: imageInfo.hasAlpha,
-        }
-      } catch (error) {
-        console.error("Error extracting image metadata:", error)
-      }
+    // Extract metadata
+    const metadata = {
+      width: 0,
+      height: 0,
+      format: file.type,
+    }
+
+    try {
+      const buffer = await file.arrayBuffer()
+      const imageMetadata = await sharp(Buffer.from(buffer)).metadata()
+      metadata.width = imageMetadata.width || 0
+      metadata.height = imageMetadata.height || 0
+    } catch (error) {
+      console.error("Metadata extraction failed:", error)
     }
 
     // Save to database
@@ -111,20 +98,23 @@ export async function POST(request: NextRequest) {
       mime_type: file.type,
       blob_url: blob.url,
       thumbnail_url: thumbnailUrl,
-      folder_id: folderId || null,
+      folder_id: folderId || undefined,
       user_id: user.id,
       metadata,
     })
 
     return NextResponse.json({
       success: true,
-      asset: {
-        ...asset,
-        metadata: typeof asset.metadata === "string" ? JSON.parse(asset.metadata) : asset.metadata,
-      },
+      asset,
+      message: "File uploaded successfully",
     })
   } catch (error) {
     console.error("Upload error:", error)
-    return NextResponse.json({ error: "Failed to upload file" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Upload failed. Please try again.",
+      },
+      { status: 500 },
+    )
   }
 }

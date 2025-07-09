@@ -266,3 +266,22 @@ export const requireAuth = async (sessionToken?: string): Promise<User | null> =
 export const requireAdmin = (user: User | null): boolean => {
   return user?.role === "admin"
 }
+
+export const getCurrentUser = async (request: Request): Promise<User | null> => {
+  try {
+    const sessionToken = request.headers
+      .get("cookie")
+      ?.split(";")
+      .find((c) => c.trim().startsWith("session="))
+      ?.split("=")[1]
+
+    if (!sessionToken) {
+      return null
+    }
+
+    return await authService.verifySession(sessionToken)
+  } catch (error) {
+    console.error("Get current user error:", error)
+    return null
+  }
+}

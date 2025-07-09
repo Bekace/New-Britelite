@@ -1,13 +1,14 @@
--- Media Library Tables
+-- Create media folders table
 CREATE TABLE IF NOT EXISTS media_folders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     parent_id UUID REFERENCES media_folders(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Create media assets table
 CREATE TABLE IF NOT EXISTS media_assets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     filename VARCHAR(255) NOT NULL,
@@ -20,11 +21,11 @@ CREATE TABLE IF NOT EXISTS media_assets (
     folder_id UUID REFERENCES media_folders(id) ON DELETE SET NULL,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Add indexes for better performance
+-- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_media_folders_user_id ON media_folders(user_id);
 CREATE INDEX IF NOT EXISTS idx_media_folders_parent_id ON media_folders(parent_id);
 CREATE INDEX IF NOT EXISTS idx_media_assets_user_id ON media_assets(user_id);

@@ -4,9 +4,8 @@ import type React from "react"
 
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -20,19 +19,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { toast } from "sonner"
+import { toast } from "@/hooks/use-toast"
 import {
   Upload,
-  FolderPlus,
   Search,
   Grid3X3,
   List,
+  FolderPlus,
+  Folder,
+  ImageIcon,
   MoreVertical,
   Trash2,
   Eye,
   Download,
-  Folder,
-  ImageIcon,
   ArrowLeft,
 } from "lucide-react"
 
@@ -46,15 +45,19 @@ interface MediaAsset {
   blob_url: string
   thumbnail_url?: string
   folder_id?: string
+  user_id: string
   metadata: any
   created_at: string
+  updated_at: string
 }
 
 interface MediaFolder {
   id: string
   name: string
   parent_id?: string
+  user_id: string
   created_at: string
+  updated_at: string
 }
 
 export default function MediaLibraryPage() {
@@ -64,38 +67,53 @@ export default function MediaLibraryPage() {
   const [selectedAssets, setSelectedAssets] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [searchQuery, setSearchQuery] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
   const [showCreateFolder, setShowCreateFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState("")
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [showPreview, setShowPreview] = useState(false)
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null)
-  const [folderPath, setFolderPath] = useState<MediaFolder[]>([])
 
   const fetchData = useCallback(async () => {
     try {
-      const [assetsRes, foldersRes] = await Promise.all([
-        fetch(`/api/media/assets?folderId=${currentFolderId || "null"}`),
-        fetch(`/api/media/folders?parentId=${currentFolderId || "null"}`),
-      ])
+      setIsLoading(true)
 
-      if (assetsRes.ok && foldersRes.ok) {
-        const assetsData = await assetsRes.json()
-        const foldersData = await foldersRes.json()
-        setAssets(assetsData.assets)
+      // Fetch folders
+      const foldersResponse = await fetch(`/api/media/folders?parentId=${currentFolderId || ""}`)
+      if (foldersResponse.ok) {
+        const foldersData = await foldersResponse.json()
         setFolders(foldersData.folders)
       }
+
+      // Fetch assets
+      const assetsUrl = searchQuery
+        ? `/api/media/assets?search=${encodeURIComponent(searchQuery)}`
+        : `/api/media/assets?folderId=${currentFolderId || ""}`
+
+      const assetsResponse = await fetch(assetsUrl)
+      if (assetsResponse.ok) {
+        const assetsData = await assetsResponse.json()
+        setAssets(assetsData.assets)
+      }
     } catch (error) {
-      console.error("Error fetching data:", error)
-      toast.error("Failed to load media library")
+      console.error("Failed to fetch data:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load media library",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
-  }, [currentFolderId])
+  }, [currentFolderId, searchQuery])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
   const handleFileUpload = async (files: FileList) => {
+    if (files.length === 0) return
+
     setIsUploading(true)
     const uploadPromises = Array.from(files).map(async (file) => {
       const formData = new FormData()
@@ -119,11 +137,18 @@ export default function MediaLibraryPage() {
 
     try {
       await Promise.all(uploadPromises)
-      toast.success(`Successfully uploaded ${files.length} file(s)`)
+      toast({
+        title: "Success",
+        description: `${files.length} file(s) uploaded successfully`,
+      })
       fetchData()
     } catch (error) {
       console.error("Upload error:", error)
-      toast.error(error instanceof Error ? error.message : "Upload failed")
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Upload failed",
+        variant: "destructive",
+      })
     } finally {
       setIsUploading(false)
     }
@@ -132,12 +157,14 @@ export default function MediaLibraryPage() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const files = e.dataTransfer.files
-    if (files.length > 0) {
-      handleFileUpload(files)
-    }
+    handleFileUpload(files)
   }
 
-  const handleCreateFolder = async () => {
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
+
+  const createFolder = async () => {
     if (!newFolderName.trim()) return
 
     try {
@@ -151,21 +178,27 @@ export default function MediaLibraryPage() {
       })
 
       if (response.ok) {
-        toast.success("Folder created successfully")
+        toast({
+          title: "Success",
+          description: "Folder created successfully",
+        })
         setNewFolderName("")
         setShowCreateFolder(false)
         fetchData()
       } else {
         const error = await response.json()
-        toast.error(error.error || "Failed to create folder")
+        throw new Error(error.error)
       }
     } catch (error) {
-      console.error("Error creating folder:", error)
-      toast.error("Failed to create folder")
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create folder",
+        variant: "destructive",
+      })
     }
   }
 
-  const handleDeleteSelected = async () => {
+  const deleteSelectedAssets = async () => {
     if (selectedAssets.length === 0) return
 
     try {
@@ -176,17 +209,23 @@ export default function MediaLibraryPage() {
       })
 
       if (response.ok) {
-        toast.success(`Deleted ${selectedAssets.length} asset(s)`)
+        toast({
+          title: "Success",
+          description: `${selectedAssets.length} asset(s) deleted successfully`,
+        })
         setSelectedAssets([])
         setShowDeleteDialog(false)
         fetchData()
       } else {
         const error = await response.json()
-        toast.error(error.error || "Failed to delete assets")
+        throw new Error(error.error)
       }
     } catch (error) {
-      console.error("Error deleting assets:", error)
-      toast.error("Failed to delete assets")
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete assets",
+        variant: "destructive",
+      })
     }
   }
 
@@ -198,83 +237,38 @@ export default function MediaLibraryPage() {
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
-  const filteredAssets = assets.filter((asset) =>
-    asset.original_filename.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
-
-  const toggleAssetSelection = (assetId: string) => {
-    setSelectedAssets((prev) => (prev.includes(assetId) ? prev.filter((id) => id !== assetId) : [...prev, assetId]))
-  }
-
-  const selectAllAssets = () => {
-    if (selectedAssets.length === filteredAssets.length) {
-      setSelectedAssets([])
-    } else {
-      setSelectedAssets(filteredAssets.map((asset) => asset.id))
-    }
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Media Library</h1>
-          <p className="text-muted-foreground">Manage your images, videos, and other media assets</p>
+        <div className="flex items-center space-x-4">
+          {currentFolderId && (
+            <Button variant="ghost" size="sm" onClick={() => setCurrentFolderId(null)}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+          )}
+          <h1 className="text-2xl font-bold">Media Library</h1>
         </div>
-      </div>
 
-      {/* Breadcrumb Navigation */}
-      {folderPath.length > 0 && (
-        <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setCurrentFolderId(null)
-              setFolderPath([])
-            }}
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Root
-          </Button>
-          {folderPath.map((folder, index) => (
-            <span key={folder.id}>/ {folder.name}</span>
-          ))}
-        </div>
-      )}
-
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search assets..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-64"
-            />
-          </div>
-
-          <Button variant="outline" size="icon" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" size="sm" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
             {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid3X3 className="h-4 w-4" />}
           </Button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {selectedAssets.length > 0 && (
-            <>
-              <Badge variant="secondary">{selectedAssets.length} selected</Badge>
-              <Button variant="outline" size="sm" onClick={() => setShowDeleteDialog(true)}>
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
-            </>
-          )}
 
           <Dialog open={showCreateFolder} onOpenChange={setShowCreateFolder}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" size="sm">
                 <FolderPlus className="h-4 w-4 mr-2" />
                 New Folder
               </Button>
@@ -288,13 +282,13 @@ export default function MediaLibraryPage() {
                   placeholder="Folder name"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
+                  onKeyPress={(e) => e.key === "Enter" && createFolder()}
                 />
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end space-x-2">
                   <Button variant="outline" onClick={() => setShowCreateFolder(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
+                  <Button onClick={createFolder} disabled={!newFolderName.trim()}>
                     Create
                   </Button>
                 </div>
@@ -302,172 +296,276 @@ export default function MediaLibraryPage() {
             </DialogContent>
           </Dialog>
 
-          <div className="relative">
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              disabled={isUploading}
-            />
+          <label className="cursor-pointer">
             <Button disabled={isUploading}>
               <Upload className="h-4 w-4 mr-2" />
               {isUploading ? "Uploading..." : "Upload"}
             </Button>
-          </div>
+            <input
+              type="file"
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+            />
+          </label>
         </div>
       </div>
 
-      {/* Drop Zone */}
-      <div
-        onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
-        className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center hover:border-muted-foreground/50 transition-colors"
-      >
-        <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-        <p className="text-lg font-medium mb-2">Drop files here to upload</p>
-        <p className="text-muted-foreground">Or click the upload button above. Supports images up to 3MB.</p>
-      </div>
+      {/* Search and Actions */}
+      <div className="flex items-center justify-between">
+        <div className="relative w-64">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+          <Input
+            placeholder="Search assets..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
 
-      {/* Content */}
-      <div className="space-y-4">
-        {/* Folders */}
-        {folders.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {folders.map((folder) => (
-              <Card
-                key={folder.id}
-                className="cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => {
-                  setCurrentFolderId(folder.id)
-                  setFolderPath([...folderPath, folder])
-                }}
-              >
-                <CardContent className="p-4 text-center">
-                  <Folder className="h-12 w-12 mx-auto mb-2 text-blue-500" />
-                  <p className="text-sm font-medium truncate">{folder.name}</p>
-                </CardContent>
-              </Card>
-            ))}
+        {selectedAssets.length > 0 && (
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-600">{selectedAssets.length} selected</span>
+            <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
           </div>
         )}
+      </div>
 
-        {/* Assets */}
-        {filteredAssets.length > 0 && (
+      {/* Content Area */}
+      <div
+        className="min-h-96 border-2 border-dashed border-gray-300 rounded-lg p-6"
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+      >
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        ) : (
           <>
-            <div className="flex items-center gap-2">
-              <Checkbox checked={selectedAssets.length === filteredAssets.length} onCheckedChange={selectAllAssets} />
-              <span className="text-sm text-muted-foreground">Select all ({filteredAssets.length} assets)</span>
-            </div>
+            {/* Folders */}
+            {folders.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-medium mb-3">Folders</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {folders.map((folder) => (
+                    <Card
+                      key={folder.id}
+                      className="cursor-pointer hover:shadow-md transition-shadow"
+                      onClick={() => setCurrentFolderId(folder.id)}
+                    >
+                      <CardContent className="p-4 text-center">
+                        <Folder className="h-12 w-12 mx-auto mb-2 text-blue-500" />
+                        <p className="text-sm font-medium truncate">{folder.name}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
 
-            <div className={viewMode === "grid" ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4" : "space-y-2"}>
-              {filteredAssets.map((asset) => (
-                <Card key={asset.id} className="group relative">
-                  <CardContent className={viewMode === "grid" ? "p-2" : "p-4 flex items-center gap-4"}>
-                    <div className="absolute top-2 left-2 z-10">
-                      <Checkbox
-                        checked={selectedAssets.includes(asset.id)}
-                        onCheckedChange={() => toggleAssetSelection(asset.id)}
-                      />
-                    </div>
-
-                    <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setPreviewAsset(asset)
-                              setShowPreview(true)
-                            }}
-                          >
-                            <Eye className="h-4 w-4 mr-2" />
-                            Preview
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => window.open(asset.blob_url, "_blank")}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Download
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setSelectedAssets([asset.id])
-                              setShowDeleteDialog(true)
-                            }}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-
-                    {viewMode === "grid" ? (
-                      <div className="text-center">
-                        <div className="aspect-square mb-2 rounded-md overflow-hidden bg-muted">
-                          {asset.thumbnail_url ? (
-                            <img
-                              src={asset.thumbnail_url || "/placeholder.svg"}
-                              alt={asset.original_filename}
-                              className="w-full h-full object-cover"
+            {/* Assets */}
+            {assets.length > 0 ? (
+              <div>
+                <h3 className="text-lg font-medium mb-3">Assets</h3>
+                {viewMode === "grid" ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {assets.map((asset) => (
+                      <Card key={asset.id} className="group relative">
+                        <CardContent className="p-2">
+                          <div className="absolute top-2 left-2 z-10">
+                            <Checkbox
+                              checked={selectedAssets.includes(asset.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedAssets([...selectedAssets, asset.id])
+                                } else {
+                                  setSelectedAssets(selectedAssets.filter((id) => id !== asset.id))
+                                }
+                              }}
                             />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                          </div>
+
+                          <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                <DropdownMenuItem onClick={() => setPreviewAsset(asset)}>
+                                  <Eye className="h-4 w-4 mr-2" />
+                                  Preview
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => window.open(asset.blob_url, "_blank")}>
+                                  <Download className="h-4 w-4 mr-2" />
+                                  Download
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+
+                          <div
+                            className="aspect-square bg-gray-100 rounded-lg mb-2 cursor-pointer overflow-hidden"
+                            onClick={() => setPreviewAsset(asset)}
+                          >
+                            {asset.thumbnail_url ? (
+                              <img
+                                src={asset.thumbnail_url || "/placeholder.svg"}
+                                alt={asset.original_filename}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <ImageIcon className="h-8 w-8 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
+
+                          <p className="text-xs font-medium truncate">{asset.original_filename}</p>
+                          <p className="text-xs text-gray-500">{formatFileSize(asset.file_size)}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {assets.map((asset) => (
+                      <Card key={asset.id}>
+                        <CardContent className="p-4 flex items-center space-x-4">
+                          <Checkbox
+                            checked={selectedAssets.includes(asset.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedAssets([...selectedAssets, asset.id])
+                              } else {
+                                setSelectedAssets(selectedAssets.filter((id) => id !== asset.id))
+                              }
+                            }}
+                          />
+
+                          <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                            {asset.thumbnail_url ? (
+                              <img
+                                src={asset.thumbnail_url || "/placeholder.svg"}
+                                alt={asset.original_filename}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <ImageIcon className="h-6 w-6 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{asset.original_filename}</p>
+                            <div className="flex items-center space-x-4 text-sm text-gray-500">
+                              <span>{formatFileSize(asset.file_size)}</span>
+                              <span>{formatDate(asset.created_at)}</span>
+                              {asset.metadata?.width && asset.metadata?.height && (
+                                <span>
+                                  {asset.metadata.width} × {asset.metadata.height}
+                                </span>
+                              )}
                             </div>
-                          )}
-                        </div>
-                        <p className="text-xs font-medium truncate">{asset.original_filename}</p>
-                        <p className="text-xs text-muted-foreground">{formatFileSize(asset.file_size)}</p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="w-16 h-16 rounded-md overflow-hidden bg-muted flex-shrink-0">
-                          {asset.thumbnail_url ? (
-                            <img
-                              src={asset.thumbnail_url || "/placeholder.svg"}
-                              alt={asset.original_filename}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{asset.original_filename}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {formatFileSize(asset.file_size)} • {asset.mime_type}
-                          </p>
-                          {asset.metadata?.width && asset.metadata?.height && (
-                            <p className="text-xs text-muted-foreground">
-                              {asset.metadata.width} × {asset.metadata.height}
-                            </p>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                          </div>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem onClick={() => setPreviewAsset(asset)}>
+                                <Eye className="h-4 w-4 mr-2" />
+                                Preview
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(asset.blob_url, "_blank")}>
+                                <Download className="h-4 w-4 mr-2" />
+                                Download
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No assets found</h3>
+                <p className="text-gray-500 mb-4">
+                  {searchQuery
+                    ? "No assets match your search."
+                    : "Drag and drop files here or click upload to get started."}
+                </p>
+                {!searchQuery && (
+                  <label className="cursor-pointer">
+                    <Button>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Files
+                    </Button>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
           </>
         )}
-
-        {filteredAssets.length === 0 && folders.length === 0 && (
-          <div className="text-center py-12">
-            <ImageIcon className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-lg font-medium mb-2">No media files found</p>
-            <p className="text-muted-foreground">Upload your first image to get started</p>
-          </div>
-        )}
       </div>
+
+      {/* Preview Dialog */}
+      {previewAsset && (
+        <Dialog open={!!previewAsset} onOpenChange={() => setPreviewAsset(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{previewAsset.original_filename}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex justify-center">
+                <img
+                  src={previewAsset.blob_url || "/placeholder.svg"}
+                  alt={previewAsset.original_filename}
+                  className="max-w-full max-h-96 object-contain"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <strong>File Size:</strong> {formatFileSize(previewAsset.file_size)}
+                </div>
+                <div>
+                  <strong>Type:</strong> {previewAsset.mime_type}
+                </div>
+                {previewAsset.metadata?.width && previewAsset.metadata?.height && (
+                  <>
+                    <div>
+                      <strong>Dimensions:</strong> {previewAsset.metadata.width} × {previewAsset.metadata.height}
+                    </div>
+                  </>
+                )}
+                <div>
+                  <strong>Uploaded:</strong> {formatDate(previewAsset.created_at)}
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
@@ -480,59 +578,12 @@ export default function MediaLibraryPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteSelected}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogAction onClick={deleteSelectedAssets} className="bg-red-600 hover:bg-red-700">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Preview Dialog */}
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>{previewAsset?.original_filename}</DialogTitle>
-          </DialogHeader>
-          {previewAsset && (
-            <div className="space-y-4">
-              <div className="aspect-video rounded-lg overflow-hidden bg-muted">
-                <img
-                  src={previewAsset.blob_url || "/placeholder.svg"}
-                  alt={previewAsset.original_filename}
-                  className="w-full h-full object-contain"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="font-medium">File Size</p>
-                  <p className="text-muted-foreground">{formatFileSize(previewAsset.file_size)}</p>
-                </div>
-                <div>
-                  <p className="font-medium">Type</p>
-                  <p className="text-muted-foreground">{previewAsset.mime_type}</p>
-                </div>
-                {previewAsset.metadata?.width && previewAsset.metadata?.height && (
-                  <>
-                    <div>
-                      <p className="font-medium">Dimensions</p>
-                      <p className="text-muted-foreground">
-                        {previewAsset.metadata.width} × {previewAsset.metadata.height}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="font-medium">Format</p>
-                      <p className="text-muted-foreground">{previewAsset.metadata.format}</p>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
