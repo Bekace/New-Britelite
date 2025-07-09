@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,31 +10,21 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { toast } from "sonner"
 import {
   Upload,
-  FolderPlus,
   Search,
   Grid3X3,
   List,
-  MoreVertical,
-  Trash2,
-  Eye,
-  Download,
+  FolderPlus,
   Folder,
   ImageIcon,
+  Trash2,
+  MoreVertical,
   ArrowLeft,
+  Eye,
+  Download,
 } from "lucide-react"
-import { toast } from "sonner"
 
 interface MediaAsset {
   id: string
@@ -43,7 +35,6 @@ interface MediaAsset {
   mime_type: string
   blob_url: string
   thumbnail_url?: string
-  folder_id?: string
   metadata: any
   created_at: string
 }
@@ -62,19 +53,18 @@ export default function MediaLibraryPage() {
   const [selectedAssets, setSelectedAssets] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [searchQuery, setSearchQuery] = useState("")
-  const [isLoading, setIsLoading] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
-  const [showCreateFolder, setShowCreateFolder] = useState(false)
+  const [showNewFolderDialog, setShowNewFolderDialog] = useState(false)
   const [newFolderName, setNewFolderName] = useState("")
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null)
+  const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async () => {
     try {
-      setIsLoading(true)
+      setLoading(true)
 
       // Fetch folders
-      const foldersResponse = await fetch(`/api/media/folders?${currentFolderId ? `parentId=${currentFolderId}` : ""}`)
+      const foldersResponse = await fetch(`/api/media/folders${currentFolderId ? `?parentId=${currentFolderId}` : ""}`)
       if (foldersResponse.ok) {
         const foldersData = await foldersResponse.json()
         setFolders(foldersData.folders)
@@ -82,7 +72,9 @@ export default function MediaLibraryPage() {
 
       // Fetch assets
       const assetsResponse = await fetch(
-        `/api/media/assets?${currentFolderId ? `folderId=${currentFolderId}` : ""}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ""}`,
+        `/api/media/assets${currentFolderId ? `?folderId=${currentFolderId}` : ""}${
+          searchQuery ? `${currentFolderId ? "&" : "?"}search=${encodeURIComponent(searchQuery)}` : ""
+        }`,
       )
       if (assetsResponse.ok) {
         const assetsData = await assetsResponse.json()
@@ -92,7 +84,7 @@ export default function MediaLibraryPage() {
       console.error("Error fetching data:", error)
       toast.error("Failed to load media library")
     } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
   }, [currentFolderId, searchQuery])
 
@@ -130,13 +122,23 @@ export default function MediaLibraryPage() {
       fetchData()
     } catch (error) {
       console.error("Upload error:", error)
-      toast.error("Some files failed to upload")
+      toast.error(error instanceof Error ? error.message : "Upload failed")
     } finally {
       setIsUploading(false)
     }
   }
 
-  const handleCreateFolder = async () => {
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const files = e.dataTransfer.files
+    handleFileUpload(files)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
+
+  const createFolder = async () => {
     if (!newFolderName.trim()) return
 
     try {
@@ -152,39 +154,33 @@ export default function MediaLibraryPage() {
       if (response.ok) {
         toast.success("Folder created successfully")
         setNewFolderName("")
-        setShowCreateFolder(false)
+        setShowNewFolderDialog(false)
         fetchData()
       } else {
         const error = await response.json()
         toast.error(error.error || "Failed to create folder")
       }
     } catch (error) {
-      console.error("Error creating folder:", error)
+      console.error("Create folder error:", error)
       toast.error("Failed to create folder")
     }
   }
 
-  const handleDeleteSelected = async () => {
-    if (selectedAssets.length === 0) return
-
+  const deleteAssets = async (assetIds: string[]) => {
     try {
-      const response = await fetch("/api/media/assets", {
+      const response = await fetch(`/api/media/assets?ids=${assetIds.join(",")}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assetIds: selectedAssets }),
       })
 
       if (response.ok) {
-        toast.success(`Deleted ${selectedAssets.length} asset(s)`)
+        toast.success(`Deleted ${assetIds.length} asset(s)`)
         setSelectedAssets([])
-        setShowDeleteDialog(false)
         fetchData()
       } else {
-        const error = await response.json()
-        toast.error(error.error || "Failed to delete assets")
+        toast.error("Failed to delete assets")
       }
     } catch (error) {
-      console.error("Error deleting assets:", error)
+      console.error("Delete error:", error)
       toast.error("Failed to delete assets")
     }
   }
@@ -208,64 +204,71 @@ export default function MediaLibraryPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
+    <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           {currentFolderId && (
             <Button variant="ghost" size="sm" onClick={() => setCurrentFolderId(null)}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Root
+              Back
             </Button>
           )}
-          <h1 className="text-2xl font-bold">Media Library</h1>
+          <h1 className="text-3xl font-bold">Media Library</h1>
         </div>
-
         <div className="flex items-center space-x-2">
+          <Button variant="outline" size="sm" onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}>
+            {viewMode === "grid" ? <List className="h-4 w-4" /> : <Grid3X3 className="h-4 w-4" />}
+          </Button>
+        </div>
+      </div>
+
+      {/* Upload Area */}
+      <Card>
+        <CardContent className="p-6">
+          <div
+            className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors"
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+          >
+            <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+            <p className="text-lg font-medium mb-2">{isUploading ? "Uploading..." : "Drag and drop files here"}</p>
+            <p className="text-gray-500 mb-4">or</p>
+            <Button
+              disabled={isUploading}
+              onClick={() => {
+                const input = document.createElement("input")
+                input.type = "file"
+                input.multiple = true
+                input.accept = "image/*"
+                input.onchange = (e) => {
+                  const files = (e.target as HTMLInputElement).files
+                  if (files) handleFileUpload(files)
+                }
+                input.click()
+              }}
+            >
+              Choose Files
+            </Button>
+            <p className="text-sm text-gray-500 mt-2">Supported formats: JPEG, PNG, GIF, WebP (Max 3MB each)</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Toolbar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
-              placeholder="Search files..."
+              placeholder="Search assets..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 w-64"
             />
           </div>
-
-          <div className="flex items-center space-x-1 border rounded-md">
-            <Button variant={viewMode === "grid" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("grid")}>
-              <Grid3X3 className="h-4 w-4" />
-            </Button>
-            <Button variant={viewMode === "list" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("list")}>
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <input
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
-            className="hidden"
-            id="file-upload"
-          />
-          <label htmlFor="file-upload">
-            <Button asChild disabled={isUploading}>
-              <span>
-                <Upload className="h-4 w-4 mr-2" />
-                {isUploading ? "Uploading..." : "Upload Files"}
-              </span>
-            </Button>
-          </label>
-
-          <Dialog open={showCreateFolder} onOpenChange={setShowCreateFolder}>
+          <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" size="sm">
                 <FolderPlus className="h-4 w-4 mr-2" />
                 New Folder
               </Button>
@@ -279,13 +282,13 @@ export default function MediaLibraryPage() {
                   placeholder="Folder name"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleCreateFolder()}
+                  onKeyPress={(e) => e.key === "Enter" && createFolder()}
                 />
                 <div className="flex justify-end space-x-2">
-                  <Button variant="outline" onClick={() => setShowCreateFolder(false)}>
+                  <Button variant="outline" onClick={() => setShowNewFolderDialog(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
+                  <Button onClick={createFolder} disabled={!newFolderName.trim()}>
                     Create
                   </Button>
                 </div>
@@ -293,11 +296,10 @@ export default function MediaLibraryPage() {
             </DialogContent>
           </Dialog>
         </div>
-
         {selectedAssets.length > 0 && (
           <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-600">{selectedAssets.length} selected</span>
-            <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)}>
+            <Badge variant="secondary">{selectedAssets.length} selected</Badge>
+            <Button variant="destructive" size="sm" onClick={() => deleteAssets(selectedAssets)}>
               <Trash2 className="h-4 w-4 mr-2" />
               Delete
             </Button>
@@ -306,31 +308,25 @@ export default function MediaLibraryPage() {
       </div>
 
       {/* Content */}
-      {isLoading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      {loading ? (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+          <p className="mt-2 text-gray-500">Loading...</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <>
           {/* Folders */}
           {folders.length > 0 && (
-            <div className={viewMode === "grid" ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4" : "space-y-2"}>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {folders.map((folder) => (
                 <Card
                   key={folder.id}
                   className="cursor-pointer hover:shadow-md transition-shadow"
                   onClick={() => setCurrentFolderId(folder.id)}
                 >
-                  <CardContent className="p-4">
-                    <div className="flex items-center space-x-2">
-                      <Folder className="h-8 w-8 text-blue-500" />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{folder.name}</p>
-                        {viewMode === "list" && (
-                          <p className="text-sm text-gray-500">{formatDate(folder.created_at)}</p>
-                        )}
-                      </div>
-                    </div>
+                  <CardContent className="p-4 text-center">
+                    <Folder className="h-12 w-12 mx-auto text-blue-500 mb-2" />
+                    <p className="text-sm font-medium truncate">{folder.name}</p>
                   </CardContent>
                 </Card>
               ))}
@@ -342,8 +338,8 @@ export default function MediaLibraryPage() {
             <div className={viewMode === "grid" ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4" : "space-y-2"}>
               {assets.map((asset) => (
                 <Card key={asset.id} className="group relative">
-                  <CardContent className="p-2">
-                    <div className="absolute top-2 left-2 z-10">
+                  <CardContent className={viewMode === "grid" ? "p-2" : "p-4"}>
+                    <div className="flex items-center space-x-2">
                       <Checkbox
                         checked={selectedAssets.includes(asset.id)}
                         onCheckedChange={(checked) => {
@@ -353,66 +349,68 @@ export default function MediaLibraryPage() {
                             setSelectedAssets(selectedAssets.filter((id) => id !== asset.id))
                           }
                         }}
-                        className="bg-white"
                       />
-                    </div>
-
-                    <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-white">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          <DropdownMenuItem onClick={() => setPreviewAsset(asset)}>
-                            <Eye className="h-4 w-4 mr-2" />
-                            Preview
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => window.open(asset.blob_url, "_blank")}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Download
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setSelectedAssets([asset.id])
-                              setShowDeleteDialog(true)
-                            }}
-                            className="text-red-600"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-
-                    <div className="aspect-square bg-gray-100 rounded-md overflow-hidden mb-2">
-                      {asset.thumbnail_url ? (
-                        <img
-                          src={asset.thumbnail_url || "/placeholder.svg"}
-                          alt={asset.original_filename}
-                          className="w-full h-full object-cover cursor-pointer"
-                          onClick={() => setPreviewAsset(asset)}
-                        />
+                      {viewMode === "grid" ? (
+                        <div className="flex-1">
+                          <div className="aspect-square relative mb-2">
+                            <img
+                              src={asset.thumbnail_url || asset.blob_url}
+                              alt={asset.original_filename}
+                              className="w-full h-full object-cover rounded"
+                            />
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all rounded flex items-center justify-center">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => setPreviewAsset(asset)}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          <p className="text-xs font-medium truncate">{asset.original_filename}</p>
+                          <p className="text-xs text-gray-500">{formatFileSize(asset.file_size)}</p>
+                        </div>
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <ImageIcon className="h-8 w-8 text-gray-400" />
+                        <div className="flex-1 flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <img
+                              src={asset.thumbnail_url || asset.blob_url}
+                              alt={asset.original_filename}
+                              className="w-12 h-12 object-cover rounded"
+                            />
+                            <div>
+                              <p className="font-medium">{asset.original_filename}</p>
+                              <p className="text-sm text-gray-500">
+                                {formatFileSize(asset.file_size)} • {formatDate(asset.created_at)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Button variant="ghost" size="sm" onClick={() => setPreviewAsset(asset)}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                <DropdownMenuItem onClick={() => window.open(asset.blob_url, "_blank")}>
+                                  <Download className="h-4 w-4 mr-2" />
+                                  Download
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => deleteAssets([asset.id])} className="text-red-600">
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                       )}
-                    </div>
-
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium truncate" title={asset.original_filename}>
-                        {asset.original_filename}
-                      </p>
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>{formatFileSize(asset.file_size)}</span>
-                        <Badge variant="secondary" className="text-xs">
-                          {asset.file_type}
-                        </Badge>
-                      </div>
-                      {viewMode === "list" && <p className="text-xs text-gray-500">{formatDate(asset.created_at)}</p>}
                     </div>
                   </CardContent>
                 </Card>
@@ -420,43 +418,13 @@ export default function MediaLibraryPage() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <ImageIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No media files</h3>
-              <p className="text-gray-500 mb-4">
-                {searchQuery ? "No files match your search." : "Upload your first media file to get started."}
-              </p>
-              {!searchQuery && (
-                <label htmlFor="file-upload">
-                  <Button asChild>
-                    <span>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload Files
-                    </span>
-                  </Button>
-                </label>
-              )}
+              <ImageIcon className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+              <p className="text-lg font-medium text-gray-500">No assets found</p>
+              <p className="text-gray-400">Upload some files to get started</p>
             </div>
           )}
-        </div>
+        </>
       )}
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Assets</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete {selectedAssets.length} asset(s)? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteSelected} className="bg-red-600 hover:bg-red-700">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Preview Dialog */}
       {previewAsset && (
@@ -466,28 +434,50 @@ export default function MediaLibraryPage() {
               <DialogTitle>{previewAsset.original_filename}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="aspect-video bg-gray-100 rounded-md overflow-hidden">
+              <div className="flex justify-center">
                 <img
                   src={previewAsset.blob_url || "/placeholder.svg"}
                   alt={previewAsset.original_filename}
-                  className="w-full h-full object-contain"
+                  className="max-w-full max-h-96 object-contain rounded"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <strong>File Size:</strong> {formatFileSize(previewAsset.file_size)}
+                  <p className="font-medium">File Size:</p>
+                  <p className="text-gray-600">{formatFileSize(previewAsset.file_size)}</p>
                 </div>
                 <div>
-                  <strong>Type:</strong> {previewAsset.mime_type}
+                  <p className="font-medium">Type:</p>
+                  <p className="text-gray-600">{previewAsset.mime_type}</p>
                 </div>
-                <div>
-                  <strong>Uploaded:</strong> {formatDate(previewAsset.created_at)}
-                </div>
-                {previewAsset.metadata?.width && previewAsset.metadata?.height && (
+                {previewAsset.metadata?.width && (
                   <div>
-                    <strong>Dimensions:</strong> {previewAsset.metadata.width} × {previewAsset.metadata.height}
+                    <p className="font-medium">Dimensions:</p>
+                    <p className="text-gray-600">
+                      {previewAsset.metadata.width} × {previewAsset.metadata.height}
+                    </p>
                   </div>
                 )}
+                <div>
+                  <p className="font-medium">Uploaded:</p>
+                  <p className="text-gray-600">{formatDate(previewAsset.created_at)}</p>
+                </div>
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={() => window.open(previewAsset.blob_url, "_blank")}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    deleteAssets([previewAsset.id])
+                    setPreviewAsset(null)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
               </div>
             </div>
           </DialogContent>
