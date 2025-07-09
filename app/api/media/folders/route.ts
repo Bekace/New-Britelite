@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/auth"
-import { mediaQueries } from "@/lib/database"
+import { createMediaFolder, getMediaFolders, deleteMediaFolder } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,17 +12,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const parentId = searchParams.get("parentId")
 
-    const folders = await mediaQueries.getFoldersByUser(user.id, parentId || undefined)
-
+    const folders = await getMediaFolders(user.id, parentId || undefined)
     return NextResponse.json({ folders })
   } catch (error) {
-    console.error("Get folders error:", error)
-    return NextResponse.json(
-      {
-        error: "Failed to fetch folders",
-      },
-      { status: 500 },
-    )
+    console.error("Error fetching folders:", error)
+    return NextResponse.json({ error: "Failed to fetch folders" }, { status: 500 })
   }
 }
 
@@ -39,25 +33,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Folder name is required" }, { status: 400 })
     }
 
-    const folder = await mediaQueries.createFolder({
+    const folder = await createMediaFolder({
       name: name.trim(),
       parent_id: parentId || undefined,
       user_id: user.id,
     })
 
-    return NextResponse.json({
-      success: true,
-      folder,
-      message: "Folder created successfully",
-    })
+    return NextResponse.json({ success: true, folder })
   } catch (error) {
-    console.error("Create folder error:", error)
-    return NextResponse.json(
-      {
-        error: "Failed to create folder",
-      },
-      { status: 500 },
-    )
+    console.error("Error creating folder:", error)
+    return NextResponse.json({ error: "Failed to create folder" }, { status: 500 })
   }
 }
 
@@ -72,22 +57,17 @@ export async function DELETE(request: NextRequest) {
     const folderId = searchParams.get("id")
 
     if (!folderId) {
-      return NextResponse.json({ error: "Folder ID is required" }, { status: 400 })
+      return NextResponse.json({ error: "Folder ID required" }, { status: 400 })
     }
 
-    await mediaQueries.deleteFolder(folderId, user.id)
+    const deletedFolder = await deleteMediaFolder(folderId, user.id)
+    if (!deletedFolder) {
+      return NextResponse.json({ error: "Folder not found" }, { status: 404 })
+    }
 
-    return NextResponse.json({
-      success: true,
-      message: "Folder deleted successfully",
-    })
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Delete folder error:", error)
-    return NextResponse.json(
-      {
-        error: "Failed to delete folder",
-      },
-      { status: 500 },
-    )
+    console.error("Error deleting folder:", error)
+    return NextResponse.json({ error: "Failed to delete folder" }, { status: 500 })
   }
 }

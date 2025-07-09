@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/auth"
-import { mediaQueries } from "@/lib/database"
+import { getMediaAssets, searchMediaAssets, deleteMediaAsset, moveMediaAsset } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,24 +11,27 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const folderId = searchParams.get("folderId")
-    const search = searchParams.get("search")
+    const query = searchParams.get("query")
+    const limit = Number.parseInt(searchParams.get("limit") || "50")
+    const offset = Number.parseInt(searchParams.get("offset") || "0")
 
     let assets
-    if (search) {
-      assets = await mediaQueries.searchAssets(user.id, search)
+    if (query) {
+      assets = await searchMediaAssets(user.id, query, limit)
     } else {
-      assets = await mediaQueries.getAssetsByUser(user.id, folderId || undefined)
+      assets = await getMediaAssets(user.id, folderId || undefined, limit, offset)
     }
 
-    return NextResponse.json({ assets })
+    // Parse metadata JSON strings
+    const assetsWithParsedMetadata = assets.map((asset) => ({
+      ...asset,
+      metadata: typeof asset.metadata === "string" ? JSON.parse(asset.metadata) : asset.metadata,
+    }))
+
+    return NextResponse.json({ assets: assetsWithParsedMetadata })
   } catch (error) {
-    console.error("Get assets error:", error)
-    return NextResponse.json(
-      {
-        error: "Failed to fetch assets",
-      },
-      { status: 500 },
-    )
+    console.error("Error fetching assets:", error)
+    return NextResponse.json({ error: "Failed to fetch assets" }, { status: 500 })
   }
 }
 
@@ -39,26 +42,22 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { assetIds } = await request.json()
+    const { searchParams } = new URL(request.url)
+    const assetId = searchParams.get("id")
 
-    if (!assetIds || !Array.isArray(assetIds)) {
-      return NextResponse.json({ error: "Invalid asset IDs" }, { status: 400 })
+    if (!assetId) {
+      return NextResponse.json({ error: "Asset ID required" }, { status: 400 })
     }
 
-    await mediaQueries.deleteMultipleAssets(assetIds, user.id)
+    const deletedAsset = await deleteMediaAsset(assetId, user.id)
+    if (!deletedAsset) {
+      return NextResponse.json({ error: "Asset not found" }, { status: 404 })
+    }
 
-    return NextResponse.json({
-      success: true,
-      message: "Assets deleted successfully",
-    })
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Delete assets error:", error)
-    return NextResponse.json(
-      {
-        error: "Failed to delete assets",
-      },
-      { status: 500 },
-    )
+    console.error("Error deleting asset:", error)
+    return NextResponse.json({ error: "Failed to delete asset" }, { status: 500 })
   }
 }
 
@@ -69,25 +68,26 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { assetIds, folderId } = await request.json()
+    const { assetId, folderId } = await request.json()
 
-    if (!assetIds || !Array.isArray(assetIds)) {
-      return NextResponse.json({ error: "Invalid asset IDs" }, { status: 400 })
+    if (!assetId) {
+      return NextResponse.json({ error: "Asset ID required" }, { status: 400 })
     }
 
-    await mediaQueries.moveAssets(assetIds, folderId || null, user.id)
+    const updatedAsset = await moveMediaAsset(assetId, folderId || null, user.id)
+    if (!updatedAsset) {
+      return NextResponse.json({ error: "Asset not found" }, { status: 404 })
+    }
 
     return NextResponse.json({
       success: true,
-      message: "Assets moved successfully",
+      asset: {
+        ...updatedAsset,
+        metadata: typeof updatedAsset.metadata === "string" ? JSON.parse(updatedAsset.metadata) : updatedAsset.metadata,
+      },
     })
   } catch (error) {
-    console.error("Move assets error:", error)
-    return NextResponse.json(
-      {
-        error: "Failed to move assets",
-      },
-      { status: 500 },
-    )
+    console.error("Error updating asset:", error)
+    return NextResponse.json({ error: "Failed to update asset" }, { status: 500 })
   }
 }

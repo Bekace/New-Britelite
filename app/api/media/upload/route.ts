@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { put } from "@vercel/blob"
 import sharp from "sharp"
 import { getCurrentUser } from "@/lib/auth"
-import { mediaQueries } from "@/lib/database"
+import { createMediaAsset } from "@/lib/database"
 
 const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
@@ -48,49 +48,47 @@ export async function POST(request: NextRequest) {
     const fileExtension = file.name.split(".").pop()
     const filename = `${timestamp}-${randomString}.${fileExtension}`
 
+    // Convert file to buffer
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+
     // Upload original file to Vercel Blob
-    const blob = await put(filename, file, {
+    const blob = await put(filename, buffer, {
       access: "public",
-      addRandomSuffix: false,
+      contentType: file.type,
     })
 
     // Generate thumbnail for images
     let thumbnailUrl: string | undefined
     try {
-      const buffer = await file.arrayBuffer()
-      const thumbnailBuffer = await sharp(Buffer.from(buffer))
-        .resize(300, 300, { fit: "cover" })
-        .jpeg({ quality: 80 })
-        .toBuffer()
+      const thumbnailBuffer = await sharp(buffer).resize(300, 300, { fit: "cover" }).jpeg({ quality: 80 }).toBuffer()
 
-      const thumbnailBlob = await put(`thumb-${filename}`, thumbnailBuffer, {
+      const thumbnailFilename = `thumb-${filename.replace(/\.[^/.]+$/, ".jpg")}`
+      const thumbnailBlob = await put(thumbnailFilename, thumbnailBuffer, {
         access: "public",
-        addRandomSuffix: false,
         contentType: "image/jpeg",
       })
       thumbnailUrl = thumbnailBlob.url
     } catch (error) {
-      console.error("Thumbnail generation failed:", error)
+      console.error("Error generating thumbnail:", error)
     }
 
     // Extract metadata
-    const metadata = {
-      width: 0,
-      height: 0,
-      format: file.type,
-    }
-
+    let metadata = {}
     try {
-      const buffer = await file.arrayBuffer()
-      const imageMetadata = await sharp(Buffer.from(buffer)).metadata()
-      metadata.width = imageMetadata.width || 0
-      metadata.height = imageMetadata.height || 0
+      const imageMetadata = await sharp(buffer).metadata()
+      metadata = {
+        width: imageMetadata.width,
+        height: imageMetadata.height,
+        format: imageMetadata.format,
+        density: imageMetadata.density,
+      }
     } catch (error) {
-      console.error("Metadata extraction failed:", error)
+      console.error("Error extracting metadata:", error)
     }
 
     // Save to database
-    const asset = await mediaQueries.createAsset({
+    const asset = await createMediaAsset({
       filename,
       original_filename: file.name,
       file_type: "image",
@@ -105,14 +103,16 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      asset,
-      message: "File uploaded successfully",
+      asset: {
+        ...asset,
+        metadata: typeof asset.metadata === "string" ? JSON.parse(asset.metadata) : asset.metadata,
+      },
     })
   } catch (error) {
     console.error("Upload error:", error)
     return NextResponse.json(
       {
-        error: "Upload failed. Please try again.",
+        error: "Failed to upload file",
       },
       { status: 500 },
     )
