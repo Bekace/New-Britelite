@@ -19,6 +19,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
   CreditCard,
   Plus,
@@ -36,6 +37,8 @@ import {
   Crown,
   Settings,
   Package,
+  MoreHorizontal,
+  Trash2,
 } from "lucide-react"
 
 interface Plan {
@@ -74,6 +77,7 @@ export default function AdminPlansPage() {
   const [features, setFeatures] = useState<PlanFeature[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
+  const [editingFeature, setEditingFeature] = useState<PlanFeature | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isFeatureDialogOpen, setIsFeatureDialogOpen] = useState(false)
@@ -97,11 +101,22 @@ export default function AdminPlansPage() {
   })
 
   const [isCreateFeatureDialogOpen, setIsCreateFeatureDialogOpen] = useState(false)
+  const [isEditFeatureDialogOpen, setIsEditFeatureDialogOpen] = useState(false)
 
   useEffect(() => {
     fetchPlans()
     fetchFeatures()
   }, [])
+
+  // Auto-generate feature key from name
+  const generateFeatureKey = (name: string) => {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "") // Remove special characters
+      .replace(/\s+/g, "_") // Replace spaces with underscores
+      .replace(/_{2,}/g, "_") // Replace multiple underscores with single
+      .replace(/^_|_$/g, "") // Remove leading/trailing underscores
+  }
 
   const fetchPlans = async () => {
     try {
@@ -260,6 +275,54 @@ export default function AdminPlansPage() {
         })
       } else {
         setMessage({ type: "error", text: result.error || "Failed to create feature" })
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: "Network error. Please try again." })
+    }
+  }
+
+  const handleUpdateFeature = async () => {
+    if (!editingFeature) return
+
+    try {
+      const response = await fetch(`/api/admin/features/${editingFeature.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingFeature),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setMessage({ type: "success", text: "Feature updated successfully" })
+        fetchFeatures()
+        setIsEditFeatureDialogOpen(false)
+        setEditingFeature(null)
+      } else {
+        setMessage({ type: "error", text: result.error || "Failed to update feature" })
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: "Network error. Please try again." })
+    }
+  }
+
+  const handleDeleteFeature = async (featureId: string) => {
+    if (!confirm("Are you sure you want to delete this feature? This action cannot be undone.")) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/admin/features/${featureId}`, {
+        method: "DELETE",
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setMessage({ type: "success", text: "Feature deleted successfully" })
+        fetchFeatures()
+      } else {
+        setMessage({ type: "error", text: result.error || "Failed to delete feature" })
       }
     } catch (error) {
       setMessage({ type: "error", text: "Network error. Please try again." })
@@ -509,8 +572,32 @@ export default function AdminPlansPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {features.map((feature) => (
-                    <Card key={feature.id} className="p-4">
-                      <div className="flex items-center justify-between mb-2">
+                    <Card key={feature.id} className="p-4 relative">
+                      <div className="absolute top-2 right-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setEditingFeature(feature)
+                                setIsEditFeatureDialogOpen(true)
+                              }}
+                            >
+                              <Edit className="h-4 w-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDeleteFeature(feature.id)} className="text-red-600">
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                      <div className="flex items-center justify-between mb-2 pr-8">
                         <h3 className="font-medium">{feature.name}</h3>
                         <Badge variant={feature.is_active ? "default" : "secondary"}>
                           {feature.is_active ? "Active" : "Inactive"}
@@ -732,7 +819,14 @@ export default function AdminPlansPage() {
               <Input
                 id="feature-name"
                 value={newFeature.name}
-                onChange={(e) => setNewFeature((prev) => ({ ...prev, name: e.target.value }))}
+                onChange={(e) => {
+                  const name = e.target.value
+                  setNewFeature((prev) => ({
+                    ...prev,
+                    name,
+                    feature_key: generateFeatureKey(name),
+                  }))
+                }}
                 placeholder="e.g., Advanced Analytics"
               />
             </div>
@@ -745,6 +839,7 @@ export default function AdminPlansPage() {
                 placeholder="e.g., advanced_analytics"
                 className="font-mono"
               />
+              <p className="text-xs text-gray-500">Auto-generated from feature name. You can customize it.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="feature-description">Description</Label>
@@ -761,6 +856,80 @@ export default function AdminPlansPage() {
               Cancel
             </Button>
             <Button onClick={handleCreateFeature}>Create Feature</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Feature Dialog */}
+      <Dialog open={isEditFeatureDialogOpen} onOpenChange={setIsEditFeatureDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Feature</DialogTitle>
+            <DialogDescription>Update feature details</DialogDescription>
+          </DialogHeader>
+          {editingFeature && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-feature-name">Feature Name</Label>
+                <Input
+                  id="edit-feature-name"
+                  value={editingFeature.name}
+                  onChange={(e) => {
+                    const name = e.target.value
+                    setEditingFeature((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            name,
+                            feature_key: generateFeatureKey(name),
+                          }
+                        : null,
+                    )
+                  }}
+                  placeholder="e.g., Advanced Analytics"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-feature-key">Feature Key</Label>
+                <Input
+                  id="edit-feature-key"
+                  value={editingFeature.feature_key}
+                  onChange={(e) =>
+                    setEditingFeature((prev) => (prev ? { ...prev, feature_key: e.target.value } : null))
+                  }
+                  placeholder="e.g., advanced_analytics"
+                  className="font-mono"
+                />
+                <p className="text-xs text-gray-500">Auto-generated from feature name. You can customize it.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-feature-description">Description</Label>
+                <Textarea
+                  id="edit-feature-description"
+                  value={editingFeature.description}
+                  onChange={(e) =>
+                    setEditingFeature((prev) => (prev ? { ...prev, description: e.target.value } : null))
+                  }
+                  placeholder="Brief description of the feature"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="edit-feature-active"
+                  checked={editingFeature.is_active}
+                  onCheckedChange={(checked) =>
+                    setEditingFeature((prev) => (prev ? { ...prev, is_active: checked } : null))
+                  }
+                />
+                <Label htmlFor="edit-feature-active">Feature is active</Label>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditFeatureDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateFeature}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
