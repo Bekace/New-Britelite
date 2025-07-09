@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Plus, Edit, Trash2, DollarSign, Users, Package } from "lucide-react"
+import { Plus, Edit, Trash2, DollarSign, Users, TrendingUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -20,7 +20,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
-import { toast } from "sonner"
+import { useToast } from "@/hooks/use-toast"
+import { useDashboard } from "@/components/dashboard/context/dashboard-context"
 
 interface Plan {
   id: string
@@ -28,16 +29,30 @@ interface Plan {
   description: string
   price: number
   billing_cycle: "monthly" | "yearly"
-  max_displays: number
+  max_screens: number
   max_storage_gb: number
+  max_playlists: number
   features: string[]
   is_active: boolean
   created_at: string
   updated_at: string
 }
 
+interface PlanStats {
+  totalPlans: number
+  activePlans: number
+  totalRevenue: number
+  totalUsers: number
+}
+
 export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([])
+  const [stats, setStats] = useState<PlanStats>({
+    totalPlans: 0,
+    activePlans: 0,
+    totalRevenue: 0,
+    totalUsers: 0,
+  })
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
@@ -46,63 +61,81 @@ export default function PlansPage() {
     description: "",
     price: 0,
     billing_cycle: "monthly" as "monthly" | "yearly",
-    max_displays: 1,
+    max_screens: 1,
     max_storage_gb: 1,
+    max_playlists: 1,
     features: "",
     is_active: true,
   })
 
-  useEffect(() => {
-    fetchPlans()
-  }, [])
+  const { user } = useDashboard()
+  const { toast } = useToast()
 
   const fetchPlans = async () => {
     try {
       const response = await fetch("/api/admin/plans")
       if (response.ok) {
         const data = await response.json()
-        setPlans(data.plans)
+        setPlans(data.plans || [])
+        setStats(data.stats || stats)
       }
     } catch (error) {
-      console.error("Failed to fetch plans:", error)
-      toast.error("Failed to load plans")
+      console.error("Error fetching plans:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load plans",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
   }
 
+  useEffect(() => {
+    if (user?.role === "super_admin") {
+      fetchPlans()
+    }
+  }, [user])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     try {
-      const planData = {
-        ...formData,
-        features: formData.features
-          .split(",")
-          .map((f) => f.trim())
-          .filter((f) => f),
-      }
-
       const url = editingPlan ? `/api/admin/plans/${editingPlan.id}` : "/api/admin/plans"
       const method = editingPlan ? "PUT" : "POST"
 
       const response = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(planData),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...formData,
+          features: formData.features
+            .split(",")
+            .map((f) => f.trim())
+            .filter(Boolean),
+        }),
       })
 
       if (response.ok) {
-        toast.success(editingPlan ? "Plan updated successfully" : "Plan created successfully")
+        toast({
+          title: "Success",
+          description: `Plan ${editingPlan ? "updated" : "created"} successfully`,
+        })
         setDialogOpen(false)
         resetForm()
         fetchPlans()
       } else {
-        toast.error("Failed to save plan")
+        throw new Error("Failed to save plan")
       }
     } catch (error) {
-      console.error("Failed to save plan:", error)
-      toast.error("Failed to save plan")
+      console.error("Error saving plan:", error)
+      toast({
+        title: "Error",
+        description: `Failed to ${editingPlan ? "update" : "create"} plan`,
+        variant: "destructive",
+      })
     }
   }
 
@@ -113,8 +146,9 @@ export default function PlansPage() {
       description: plan.description,
       price: plan.price,
       billing_cycle: plan.billing_cycle,
-      max_displays: plan.max_displays,
+      max_screens: plan.max_screens,
       max_storage_gb: plan.max_storage_gb,
+      max_playlists: plan.max_playlists,
       features: plan.features.join(", "),
       is_active: plan.is_active,
     })
@@ -130,14 +164,21 @@ export default function PlansPage() {
       })
 
       if (response.ok) {
-        toast.success("Plan deleted successfully")
+        toast({
+          title: "Success",
+          description: "Plan deleted successfully",
+        })
         fetchPlans()
       } else {
-        toast.error("Failed to delete plan")
+        throw new Error("Failed to delete plan")
       }
     } catch (error) {
-      console.error("Failed to delete plan:", error)
-      toast.error("Failed to delete plan")
+      console.error("Error deleting plan:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete plan",
+        variant: "destructive",
+      })
     }
   }
 
@@ -148,8 +189,9 @@ export default function PlansPage() {
       description: "",
       price: 0,
       billing_cycle: "monthly",
-      max_displays: 1,
+      max_screens: 1,
       max_storage_gb: 1,
+      max_playlists: 1,
       features: "",
       is_active: true,
     })
@@ -157,25 +199,21 @@ export default function PlansPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Plan Management</h1>
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Loading plans...</p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[...Array(3)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader>
-                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="h-3 bg-gray-200 rounded"></div>
-                  <div className="h-3 bg-gray-200 rounded w-5/6"></div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+      </div>
+    )
+  }
+
+  if (user?.role !== "super_admin") {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900">Access Denied</h2>
+          <p className="text-gray-600 mt-2">You need super admin privileges to access this page.</p>
         </div>
       </div>
     )
@@ -183,6 +221,7 @@ export default function PlansPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Plan Management</h1>
@@ -195,103 +234,114 @@ export default function PlansPage() {
               Create Plan
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-[600px]">
             <form onSubmit={handleSubmit}>
               <DialogHeader>
                 <DialogTitle>{editingPlan ? "Edit Plan" : "Create New Plan"}</DialogTitle>
                 <DialogDescription>
-                  {editingPlan ? "Update the plan details below." : "Create a new subscription plan."}
+                  {editingPlan
+                    ? "Update the plan details below."
+                    : "Create a new subscription plan with the details below."}
                 </DialogDescription>
               </DialogHeader>
+
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="name" className="text-right">
-                    Name
-                  </Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="col-span-3"
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Plan Name</Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g., Basic, Pro, Enterprise"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="price">Price ($)</Label>
+                    <Input
+                      id="price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.price}
+                      onChange={(e) => setFormData({ ...formData, price: Number.parseFloat(e.target.value) })}
+                      required
+                    />
+                  </div>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="description" className="text-right">
-                    Description
-                  </Label>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
                   <Textarea
                     id="description"
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="col-span-3"
+                    placeholder="Plan description..."
                     required
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="price" className="text-right">
-                    Price ($)
-                  </Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: Number.parseFloat(e.target.value) })}
-                    className="col-span-3"
-                    required
-                  />
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="max_screens">Max Screens</Label>
+                    <Input
+                      id="max_screens"
+                      type="number"
+                      min="1"
+                      value={formData.max_screens}
+                      onChange={(e) => setFormData({ ...formData, max_screens: Number.parseInt(e.target.value) })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="max_storage_gb">Storage (GB)</Label>
+                    <Input
+                      id="max_storage_gb"
+                      type="number"
+                      min="1"
+                      value={formData.max_storage_gb}
+                      onChange={(e) => setFormData({ ...formData, max_storage_gb: Number.parseInt(e.target.value) })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="max_playlists">Max Playlists</Label>
+                    <Input
+                      id="max_playlists"
+                      type="number"
+                      min="1"
+                      value={formData.max_playlists}
+                      onChange={(e) => setFormData({ ...formData, max_playlists: Number.parseInt(e.target.value) })}
+                      required
+                    />
+                  </div>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="max_displays" className="text-right">
-                    Max Displays
-                  </Label>
-                  <Input
-                    id="max_displays"
-                    type="number"
-                    value={formData.max_displays}
-                    onChange={(e) => setFormData({ ...formData, max_displays: Number.parseInt(e.target.value) })}
-                    className="col-span-3"
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="max_storage_gb" className="text-right">
-                    Storage (GB)
-                  </Label>
-                  <Input
-                    id="max_storage_gb"
-                    type="number"
-                    value={formData.max_storage_gb}
-                    onChange={(e) => setFormData({ ...formData, max_storage_gb: Number.parseInt(e.target.value) })}
-                    className="col-span-3"
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="features" className="text-right">
-                    Features
-                  </Label>
-                  <Input
+
+                <div className="space-y-2">
+                  <Label htmlFor="features">Features (comma-separated)</Label>
+                  <Textarea
                     id="features"
                     value={formData.features}
                     onChange={(e) => setFormData({ ...formData, features: e.target.value })}
-                    className="col-span-3"
-                    placeholder="Feature 1, Feature 2, Feature 3"
+                    placeholder="e.g., HD Content, Analytics, Priority Support"
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="is_active" className="text-right">
-                    Active
-                  </Label>
+
+                <div className="flex items-center space-x-2">
                   <Switch
                     id="is_active"
                     checked={formData.is_active}
                     onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
                   />
+                  <Label htmlFor="is_active">Active Plan</Label>
                 </div>
               </div>
+
               <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                  Cancel
+                </Button>
                 <Button type="submit">{editingPlan ? "Update Plan" : "Create Plan"}</Button>
               </DialogFooter>
             </form>
@@ -300,101 +350,110 @@ export default function PlansPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Plans</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{plans.length}</div>
-            <p className="text-xs text-muted-foreground">{plans.filter((p) => p.is_active).length} active plans</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Average Price</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              $
-              {plans.length > 0 ? (plans.reduce((sum, plan) => sum + plan.price, 0) / plans.length).toFixed(2) : "0.00"}
-            </div>
-            <p className="text-xs text-muted-foreground">Per month average</p>
+            <div className="text-2xl font-bold">{stats.totalPlans}</div>
+            <p className="text-xs text-muted-foreground">{stats.activePlans} active</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Price Range</CardTitle>
+            <CardTitle className="text-sm font-medium">Active Plans</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.activePlans}</div>
+            <p className="text-xs text-muted-foreground">Currently available</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${stats.totalRevenue.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Monthly recurring</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              ${plans.length > 0 ? Math.min(...plans.map((p) => p.price)).toFixed(2) : "0.00"} - $
-              {plans.length > 0 ? Math.max(...plans.map((p) => p.price)).toFixed(2) : "0.00"}
-            </div>
-            <p className="text-xs text-muted-foreground">Min - Max pricing</p>
+            <div className="text-2xl font-bold">{stats.totalUsers}</div>
+            <p className="text-xs text-muted-foreground">Across all plans</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Plans Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {plans.map((plan) => (
-          <Card key={plan.id} className={!plan.is_active ? "opacity-60" : ""}>
+          <Card key={plan.id} className="relative">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">{plan.name}</CardTitle>
-                <div className="flex items-center space-x-2">
-                  {plan.is_active ? (
-                    <Badge variant="default">Active</Badge>
-                  ) : (
-                    <Badge variant="secondary">Inactive</Badge>
-                  )}
-                  <div className="flex items-center space-x-1">
-                    <Button variant="ghost" size="sm" onClick={() => handleEdit(plan)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => handleDelete(plan.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+                <CardTitle className="text-xl">{plan.name}</CardTitle>
+                <Badge variant={plan.is_active ? "default" : "secondary"}>
+                  {plan.is_active ? "Active" : "Inactive"}
+                </Badge>
               </div>
               <CardDescription>{plan.description}</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="text-3xl font-bold">
-                  ${plan.price}
-                  <span className="text-sm font-normal text-muted-foreground">/{plan.billing_cycle}</span>
-                </div>
+            <CardContent className="space-y-4">
+              <div className="text-3xl font-bold">
+                ${plan.price}
+                <span className="text-sm font-normal text-muted-foreground">/{plan.billing_cycle}</span>
+              </div>
 
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Max Screens:</span>
+                  <span className="font-medium">{plan.max_screens}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Storage:</span>
+                  <span className="font-medium">{plan.max_storage_gb} GB</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Max Playlists:</span>
+                  <span className="font-medium">{plan.max_playlists}</span>
+                </div>
+              </div>
+
+              {plan.features.length > 0 && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Max Displays:</span>
-                    <span className="font-medium">{plan.max_displays}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Storage:</span>
-                    <span className="font-medium">{plan.max_storage_gb} GB</span>
-                  </div>
+                  <h4 className="text-sm font-medium">Features:</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1">
+                    {plan.features.map((feature, index) => (
+                      <li key={index} className="flex items-center">
+                        <span className="w-1 h-1 bg-current rounded-full mr-2"></span>
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
+              )}
 
-                {plan.features.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">Features:</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      {plan.features.map((feature, index) => (
-                        <li key={index} className="flex items-center">
-                          <span className="w-1 h-1 bg-current rounded-full mr-2"></span>
-                          {feature}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+              <div className="flex space-x-2 pt-4">
+                <Button variant="outline" size="sm" onClick={() => handleEdit(plan)} className="flex-1">
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDelete(plan.id)}
+                  className="text-red-600 hover:text-red-700"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -404,7 +463,7 @@ export default function PlansPage() {
       {plans.length === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <Package className="h-12 w-12 text-muted-foreground mb-4" />
+            <DollarSign className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">No plans found</h3>
             <p className="text-muted-foreground text-center mb-4">
               Get started by creating your first subscription plan.

@@ -1,92 +1,139 @@
+import type React from "react"
 import {
-  BarChart3,
-  FileImage,
+  LayoutDashboard,
+  ImageIcon,
+  Play,
   Monitor,
+  BarChart3,
   Settings,
-  Users,
-  CreditCard,
-  Bell,
-  HelpCircle,
   User,
+  Bell,
+  CreditCard,
+  HelpCircle,
+  Users,
   Package,
   Shield,
 } from "lucide-react"
+import type { User as UserType } from "@/lib/auth"
 
 export interface NavigationItem {
   title: string
   href: string
-  icon: any
+  icon: React.ComponentType<{ className?: string }>
   badge?: string
-  adminOnly?: boolean
-  superAdminOnly?: boolean
+  roles?: string[]
 }
 
-export const mainNavigationItems: NavigationItem[] = [
-  {
-    title: "Dashboard",
-    href: "/dashboard",
-    icon: BarChart3,
-  },
-  {
-    title: "Media Library",
-    href: "/dashboard/media",
-    icon: FileImage,
-  },
-  {
-    title: "Displays",
-    href: "/dashboard/displays",
-    icon: Monitor,
-    badge: "Soon",
-  },
-]
+export interface NavigationSection {
+  title: string
+  items: NavigationItem[]
+}
 
-export const accountNavigationItems: NavigationItem[] = [
-  {
-    title: "Profile",
-    href: "/dashboard/profile",
-    icon: User,
-  },
-  {
-    title: "Billing",
-    href: "/dashboard/billing",
-    icon: CreditCard,
-  },
-  {
-    title: "Notifications",
-    href: "/dashboard/notifications",
-    icon: Bell,
-  },
-  {
-    title: "Settings",
-    href: "/dashboard/settings",
-    icon: Settings,
-  },
-  {
-    title: "Help & Support",
-    href: "/dashboard/help",
-    icon: HelpCircle,
-  },
-]
+export function getNavigationConfig(user: UserType | null): NavigationSection[] {
+  const sections: NavigationSection[] = [
+    {
+      title: "Main",
+      items: [
+        {
+          title: "Dashboard",
+          href: "/dashboard",
+          icon: LayoutDashboard,
+        },
+        {
+          title: "Media Library",
+          href: "/dashboard/media",
+          icon: ImageIcon,
+        },
+        {
+          title: "Playlists",
+          href: "/dashboard/playlists",
+          icon: Play,
+        },
+        {
+          title: "Screens",
+          href: "/dashboard/screens",
+          icon: Monitor,
+        },
+        {
+          title: "Analytics",
+          href: "/dashboard/analytics",
+          icon: BarChart3,
+        },
+      ],
+    },
+    {
+      title: "Account",
+      items: [
+        {
+          title: "Profile",
+          href: "/dashboard/profile",
+          icon: User,
+        },
+        {
+          title: "Notifications",
+          href: "/dashboard/notifications",
+          icon: Bell,
+        },
+        {
+          title: "Billing",
+          href: "/dashboard/billing",
+          icon: CreditCard,
+        },
+        {
+          title: "Settings",
+          href: "/dashboard/settings",
+          icon: Settings,
+        },
+        {
+          title: "Help & Support",
+          href: "/dashboard/help",
+          icon: HelpCircle,
+        },
+      ],
+    },
+  ]
 
-export const adminNavigationItems: NavigationItem[] = [
-  {
-    title: "User Management",
-    href: "/dashboard/admin/users",
-    icon: Users,
-    adminOnly: true,
-  },
-  {
-    title: "Plan Management",
-    href: "/dashboard/admin/plans",
-    icon: Package,
-    superAdminOnly: true,
-  },
-  {
-    title: "System Settings",
-    href: "/dashboard/admin/settings",
-    icon: Shield,
-    superAdminOnly: true,
-  },
-]
+  // Add admin section if user has admin or super_admin role
+  if (user && (user.role === "admin" || user.role === "super_admin")) {
+    sections.push({
+      title: "Administration",
+      items: [
+        {
+          title: "User Management",
+          href: "/dashboard/admin/users",
+          icon: Users,
+          roles: ["admin", "super_admin"],
+        },
+        {
+          title: "Plan Management",
+          href: "/dashboard/admin/plans",
+          icon: Package,
+          roles: ["super_admin"],
+        },
+        {
+          title: "System Settings",
+          href: "/dashboard/admin/system",
+          icon: Shield,
+          roles: ["super_admin"],
+        },
+      ],
+    })
+  }
 
-export const navigationItems = [...mainNavigationItems, ...accountNavigationItems, ...adminNavigationItems]
+  return sections
+}
+
+export function filterNavigationByRole(
+  sections: NavigationSection[],
+  userRole: string | undefined,
+): NavigationSection[] {
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (!item.roles) return true
+        return userRole && item.roles.includes(userRole)
+      }),
+    }))
+    .filter((section) => section.items.length > 0)
+}

@@ -2,253 +2,309 @@ import { cookies } from "next/headers"
 import type { NextRequest } from "next/server"
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
-import { sql } from "@/lib/database"
+import crypto from "crypto"
+import { userQueries, sessionQueries, auditQueries } from "./database"
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key"
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET environment variable is required")
+}
 
-// Types
+const JWT_SECRET = process.env.JWT_SECRET
+const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 days
+
 export interface User {
   id: string
   email: string
   first_name: string
   last_name: string
   role: "user" | "admin" | "super_admin"
+  is_email_verified: boolean
+  plan_id?: string
+  plan_name?: string
+  max_screens?: number
+  max_storage_gb?: number
+  max_playlists?: number
   business_name?: string
+  business_address?: string
+  phone?: string
   avatar_url?: string
-  created_at: string
-  updated_at: string
 }
 
-export interface LoginCredentials {
-  email: string
-  password: string
+export interface AuthResult {
+  success: boolean
+  user?: User
+  token?: string
+  message?: string
+  error?: string
+  verificationToken?: string
 }
 
-export interface RegisterData {
-  email: string
-  password: string
-  first_name: string
-  last_name: string
-  business_name?: string
-}
-
-// Password utilities
 export const passwordUtils = {
-  async hash(password: string): Promise<string> {
-    return bcrypt.hash(password, 12)
+  hash: async (password: string): Promise<string> => {
+    return await bcrypt.hash(password, 12)
   },
 
-  async verify(password: string, hashedPassword: string): Promise<boolean> {
-    return bcrypt.compare(password, hashedPassword)
+  verify: async (password: string, hash: string): Promise<boolean> => {
+    return await bcrypt.compare(password, hash)
   },
 
-  validate(password: string): { isValid: boolean; errors: string[] } {
+  validate: (password: string): { valid: boolean; errors: string[] } => {
     const errors: string[] = []
 
     if (password.length < 8) {
       errors.push("Password must be at least 8 characters long")
     }
-
-    if (!/(?=.*[a-z])/.test(password)) {
-      errors.push("Password must contain at least one lowercase letter")
-    }
-
-    if (!/(?=.*[A-Z])/.test(password)) {
+    if (!/[A-Z]/.test(password)) {
       errors.push("Password must contain at least one uppercase letter")
     }
-
-    if (!/(?=.*\d)/.test(password)) {
+    if (!/[a-z]/.test(password)) {
+      errors.push("Password must contain at least one lowercase letter")
+    }
+    if (!/\d/.test(password)) {
       errors.push("Password must contain at least one number")
     }
 
-    return {
-      isValid: errors.length === 0,
-      errors,
-    }
+    return { valid: errors.length === 0, errors }
   },
 }
 
-// Token utilities
 export const tokenUtils = {
-  generate(payload: any): string {
+  generateSessionToken: (): string => {
+    return crypto.randomBytes(32).toString("hex")
+  },
+
+  generateEmailToken: (): string => {
+    return crypto.randomBytes(32).toString("hex")
+  },
+
+  generateJWT: (payload: any): string => {
     return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" })
   },
 
-  verify(token: string): any {
+  verifyJWT: (token: string): any => {
     try {
       return jwt.verify(token, JWT_SECRET)
     } catch (error) {
       return null
     }
   },
-
-  decode(token: string): any {
-    try {
-      return jwt.decode(token)
-    } catch (error) {
-      return null
-    }
-  },
 }
 
-// Auth service
 export const authService = {
-  async login(credentials: LoginCredentials): Promise<{ user: User; token: string } | null> {
+  register: async (data: {
+    email: string
+    password: string
+    first_name: string
+    last_name: string
+    business_name?: string
+  }): Promise<AuthResult> => {
     try {
-      const result = await sql`
-        SELECT id, email, password_hash, first_name, last_name, role, business_name, avatar_url, created_at, updated_at
-        FROM users 
-        WHERE email = ${credentials.email} AND email_verified = true
-      `
-
-      if (result.length === 0) {
-        return null
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(data.email)) {
+        return { success: false, error: "Invalid email format" }
       }
 
-      const user = result[0]
-      const isValidPassword = await passwordUtils.verify(credentials.password, user.password_hash)
-
-      if (!isValidPassword) {
-        return null
+      const passwordValidation = passwordUtils.validate(data.password)
+      if (!passwordValidation.valid) {
+        return { success: false, error: passwordValidation.errors.join(", ") }
       }
 
-      const token = tokenUtils.generate({ userId: user.id, email: user.email })
+      const existingUser = await userQueries.findByEmail(data.email)
+      if (existingUser) {
+        return { success: false, error: "User with this email already exists" }
+      }
 
-      const { password_hash, ...userWithoutPassword } = user
+      const passwordHash = await passwordUtils.hash(data.password)
+      const emailVerificationToken = tokenUtils.generateEmailToken()
+
+      const user = await userQueries.create({
+        email: data.email,
+        password_hash: passwordHash,
+        first_name: data.first_name,
+        last_name: data.last_name,
+        business_name: data.business_name,
+        email_verification_token: emailVerificationToken,
+      })
+
+      await auditQueries.log({
+        user_id: user.id,
+        action: "user_registered",
+        details: { email: data.email },
+      })
 
       return {
-        user: userWithoutPassword as User,
-        token,
+        success: true,
+        user: user as User,
+        verificationToken: emailVerificationToken,
+        message: "Registration successful. Please check your email to verify your account.",
+      }
+    } catch (error) {
+      console.error("Registration error:", error)
+      return { success: false, error: "Registration failed. Please try again." }
+    }
+  },
+
+  login: async (email: string, password: string): Promise<AuthResult> => {
+    try {
+      const user = await userQueries.findByEmail(email)
+      if (!user) {
+        return { success: false, error: "Invalid email or password" }
+      }
+
+      const isValidPassword = await passwordUtils.verify(password, user.password_hash)
+      if (!isValidPassword) {
+        return { success: false, error: "Invalid email or password" }
+      }
+
+      const sessionToken = tokenUtils.generateSessionToken()
+      const expiresAt = new Date(Date.now() + SESSION_DURATION)
+
+      await sessionQueries.create(user.id, sessionToken, expiresAt)
+
+      const {
+        password_hash,
+        email_verification_token,
+        password_reset_token,
+        password_reset_expires,
+        ...userWithoutSensitiveData
+      } = user
+
+      return {
+        success: true,
+        user: userWithoutSensitiveData as User,
+        token: sessionToken,
+        message: "Login successful",
       }
     } catch (error) {
       console.error("Login error:", error)
-      return null
+      return { success: false, error: "Login failed. Please try again." }
     }
   },
 
-  async register(data: RegisterData): Promise<{ user: User; token: string } | null> {
+  verifyEmail: async (token: string): Promise<AuthResult> => {
     try {
-      const passwordValidation = passwordUtils.validate(data.password)
-      if (!passwordValidation.isValid) {
-        throw new Error(passwordValidation.errors.join(", "))
+      if (!token) {
+        return { success: false, error: "Verification token is required" }
       }
 
-      const hashedPassword = await passwordUtils.hash(data.password)
+      const user = await userQueries.updateEmailVerification(token)
+      if (!user) {
+        return { success: false, error: "Invalid or expired verification token" }
+      }
 
-      const result = await sql`
-        INSERT INTO users (email, password_hash, first_name, last_name, business_name, role)
-        VALUES (${data.email}, ${hashedPassword}, ${data.first_name}, ${data.last_name}, ${data.business_name || null}, 'user')
-        RETURNING id, email, first_name, last_name, role, business_name, avatar_url, created_at, updated_at
-      `
+      await auditQueries.log({
+        user_id: user.id,
+        action: "email_verified",
+        details: { email: user.email },
+      })
 
-      if (result.length === 0) {
+      return {
+        success: true,
+        message: "Email verified successfully! You can now sign in to your account.",
+      }
+    } catch (error) {
+      console.error("Email verification error:", error)
+      return { success: false, error: "Email verification failed. Please try again." }
+    }
+  },
+
+  requestPasswordReset: async (email: string): Promise<AuthResult> => {
+    try {
+      const user = await userQueries.findByEmail(email)
+      if (!user) {
+        // Return success even if user doesn't exist for security
+        return { success: true, message: "If an account exists, a reset link has been sent." }
+      }
+
+      const resetToken = tokenUtils.generateEmailToken()
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+      await userQueries.setPasswordResetToken(email, resetToken, expiresAt)
+
+      await auditQueries.log({
+        user_id: user.id,
+        action: "password_reset_requested",
+        details: { email },
+      })
+
+      return { success: true, message: "Password reset link sent to your email." }
+    } catch (error) {
+      console.error("Password reset request error:", error)
+      return { success: false, error: "Failed to process password reset request." }
+    }
+  },
+
+  logout: async (sessionToken: string): Promise<void> => {
+    try {
+      await sessionQueries.delete(sessionToken)
+    } catch (error) {
+      console.error("Logout error:", error)
+    }
+  },
+
+  verifySession: async (sessionToken: string): Promise<User | null> => {
+    try {
+      const session = await sessionQueries.findByToken(sessionToken)
+      if (!session) {
         return null
       }
 
-      const user = result[0] as User
-      const token = tokenUtils.generate({ userId: user.id, email: user.email })
-
-      return { user, token }
+      const { password_hash, email_verification_token, password_reset_token, password_reset_expires, ...user } = session
+      return user as User
     } catch (error) {
-      console.error("Registration error:", error)
-      return null
-    }
-  },
-
-  async getUserById(id: string): Promise<User | null> {
-    try {
-      const result = await sql`
-        SELECT id, email, first_name, last_name, role, business_name, avatar_url, created_at, updated_at
-        FROM users 
-        WHERE id = ${id}
-      `
-
-      return result.length > 0 ? (result[0] as User) : null
-    } catch (error) {
-      console.error("Get user by ID error:", error)
-      return null
-    }
-  },
-
-  async updateUser(id: string, updates: Partial<User>): Promise<User | null> {
-    try {
-      const setClause = Object.keys(updates)
-        .map((key) => `${key} = $${Object.keys(updates).indexOf(key) + 2}`)
-        .join(", ")
-
-      const values = [id, ...Object.values(updates)]
-
-      const result = await sql`
-        UPDATE users 
-        SET ${sql.unsafe(setClause)}, updated_at = NOW()
-        WHERE id = $1
-        RETURNING id, email, first_name, last_name, role, business_name, avatar_url, created_at, updated_at
-      `.apply(null, values)
-
-      return result.length > 0 ? (result[0] as User) : null
-    } catch (error) {
-      console.error("Update user error:", error)
+      console.error("Session verification error:", error)
       return null
     }
   },
 }
 
-// Get current user from request
-export async function getCurrentUser(): Promise<User | null> {
+// Additional required exports
+export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
+  return await passwordUtils.verify(password, hash)
+}
+
+export const generateToken = (payload: any): string => {
+  return tokenUtils.generateJWT(payload)
+}
+
+export const requireAuth = async (sessionToken?: string): Promise<User | null> => {
+  if (!sessionToken) {
+    return null
+  }
+  return await authService.verifySession(sessionToken)
+}
+
+export const requireAdmin = (user: User | null): boolean => {
+  return user?.role === "admin" || user?.role === "super_admin"
+}
+
+export const getCurrentUser = async (): Promise<User | null> => {
   try {
     const cookieStore = await cookies()
-    const token = cookieStore.get("auth-token")?.value
+    const sessionToken = cookieStore.get("session")?.value
 
-    if (!token) {
+    if (!sessionToken) {
       return null
     }
 
-    const payload = tokenUtils.verify(token)
-    if (!payload || !payload.userId) {
-      return null
-    }
-
-    return await authService.getUserById(payload.userId)
+    return await authService.verifySession(sessionToken)
   } catch (error) {
     console.error("Get current user error:", error)
     return null
   }
 }
 
-// Get current user from NextRequest (for API routes)
-export async function getCurrentUserFromRequest(request: NextRequest): Promise<User | null> {
+export const getCurrentUserFromRequest = async (request: NextRequest): Promise<User | null> => {
   try {
-    const token = request.cookies.get("auth-token")?.value
+    const sessionToken = request.cookies.get("session")?.value
 
-    if (!token) {
+    if (!sessionToken) {
       return null
     }
 
-    const payload = tokenUtils.verify(token)
-    if (!payload || !payload.userId) {
-      return null
-    }
-
-    return await authService.getUserById(payload.userId)
+    return await authService.verifySession(sessionToken)
   } catch (error) {
     console.error("Get current user from request error:", error)
     return null
-  }
-}
-
-// Middleware helper
-export function requireAuth(roles?: string[]) {
-  return async (request: NextRequest) => {
-    const user = await getCurrentUserFromRequest(request)
-
-    if (!user) {
-      return false
-    }
-
-    if (roles && !roles.includes(user.role)) {
-      return false
-    }
-
-    return user
   }
 }
