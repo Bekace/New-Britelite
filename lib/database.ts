@@ -168,3 +168,151 @@ export const auditQueries = {
     `
   },
 }
+
+export const mediaQueries = {
+  // Folder operations
+  createFolder: async (data: {
+    name: string
+    parent_id?: string
+    user_id: string
+  }) => {
+    const result = await sql`
+      INSERT INTO media_folders (name, parent_id, user_id)
+      VALUES (${data.name}, ${data.parent_id || null}, ${data.user_id})
+      RETURNING *
+    `
+    return result[0]
+  },
+
+  getFolders: async (userId: string, parentId?: string) => {
+    return await sql`
+      SELECT * FROM media_folders 
+      WHERE user_id = ${userId} 
+        AND (parent_id = ${parentId || null} OR (parent_id IS NULL AND ${parentId} IS NULL))
+      ORDER BY name ASC
+    `
+  },
+
+  deleteFolder: async (folderId: string, userId: string) => {
+    await sql`
+      DELETE FROM media_folders 
+      WHERE id = ${folderId} AND user_id = ${userId}
+    `
+  },
+
+  // Asset operations
+  createAsset: async (data: {
+    filename: string
+    original_filename: string
+    file_type: string
+    file_size: number
+    mime_type: string
+    blob_url: string
+    thumbnail_url?: string
+    folder_id?: string
+    user_id: string
+    metadata?: any
+  }) => {
+    const result = await sql`
+      INSERT INTO media_assets (
+        filename, original_filename, file_type, file_size, mime_type,
+        blob_url, thumbnail_url, folder_id, user_id, metadata
+      )
+      VALUES (
+        ${data.filename}, ${data.original_filename}, ${data.file_type}, 
+        ${data.file_size}, ${data.mime_type}, ${data.blob_url}, 
+        ${data.thumbnail_url || null}, ${data.folder_id || null}, 
+        ${data.user_id}, ${JSON.stringify(data.metadata || {})}
+      )
+      RETURNING *
+    `
+    return result[0]
+  },
+
+  getAssets: async (userId: string, folderId?: string, fileType?: string) => {
+    let query = sql`
+      SELECT * FROM media_assets 
+      WHERE user_id = ${userId}
+    `
+
+    if (folderId !== undefined) {
+      query = sql`
+        SELECT * FROM media_assets 
+        WHERE user_id = ${userId} 
+          AND (folder_id = ${folderId || null} OR (folder_id IS NULL AND ${folderId} IS NULL))
+      `
+    }
+
+    if (fileType) {
+      query = sql`
+        SELECT * FROM media_assets 
+        WHERE user_id = ${userId} 
+          AND file_type = ${fileType}
+          AND (folder_id = ${folderId || null} OR (folder_id IS NULL AND ${folderId} IS NULL))
+      `
+    }
+
+    const assets = await query
+    return assets.map((asset) => ({
+      ...asset,
+      metadata: typeof asset.metadata === "string" ? JSON.parse(asset.metadata) : asset.metadata,
+    }))
+  },
+
+  deleteAsset: async (assetId: string, userId: string) => {
+    const result = await sql`
+      DELETE FROM media_assets 
+      WHERE id = ${assetId} AND user_id = ${userId}
+      RETURNING blob_url, thumbnail_url
+    `
+    return result[0] || null
+  },
+
+  deleteMultipleAssets: async (assetIds: string[], userId: string) => {
+    const result = await sql`
+      DELETE FROM media_assets 
+      WHERE id = ANY(${assetIds}) AND user_id = ${userId}
+      RETURNING blob_url, thumbnail_url
+    `
+    return result
+  },
+
+  moveAssets: async (assetIds: string[], folderId: string | null, userId: string) => {
+    await sql`
+      UPDATE media_assets 
+      SET folder_id = ${folderId}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ANY(${assetIds}) AND user_id = ${userId}
+    `
+  },
+
+  getAssetById: async (assetId: string, userId: string) => {
+    const result = await sql`
+      SELECT * FROM media_assets 
+      WHERE id = ${assetId} AND user_id = ${userId}
+    `
+    if (result[0]) {
+      return {
+        ...result[0],
+        metadata: typeof result[0].metadata === "string" ? JSON.parse(result[0].metadata) : result[0].metadata,
+      }
+    }
+    return null
+  },
+}
+
+export const systemQueries = {
+  getSetting: async (key: string) => {
+    const result = await sql`
+      SELECT value FROM system_settings WHERE key = ${key}
+    `
+    return result[0]?.value || null
+  },
+
+  updateSetting: async (key: string, value: string) => {
+    await sql`
+      UPDATE system_settings 
+      SET value = ${value}, updated_at = CURRENT_TIMESTAMP
+      WHERE key = ${key}
+    `
+  },
+}
