@@ -2,6 +2,7 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 
 interface User {
   id: string
@@ -9,17 +10,17 @@ interface User {
   first_name: string
   last_name: string
   role: "user" | "admin" | "super_admin"
-  is_email_verified: boolean
   business_name?: string
   avatar_url?: string
+  created_at: string
+  updated_at: string
 }
 
 interface DashboardContextType {
   user: User | null
   loading: boolean
-  error: string | null
-  refreshUser: () => Promise<void>
   logout: () => Promise<void>
+  refreshUser: () => Promise<void>
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
@@ -27,13 +28,10 @@ const DashboardContext = createContext<DashboardContextType | undefined>(undefin
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
 
   const fetchUser = async () => {
     try {
-      setLoading(true)
-      setError(null)
-
       const response = await fetch("/api/auth/me", {
         credentials: "include",
       })
@@ -43,21 +41,16 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         setUser(userData.user)
       } else {
         setUser(null)
-        if (response.status !== 401) {
-          setError("Failed to fetch user data")
+        if (response.status === 401) {
+          router.push("/auth/login")
         }
       }
-    } catch (err) {
-      console.error("Error fetching user:", err)
-      setError("Network error")
+    } catch (error) {
+      console.error("Failed to fetch user:", error)
       setUser(null)
     } finally {
       setLoading(false)
     }
-  }
-
-  const refreshUser = async () => {
-    await fetchUser()
   }
 
   const logout = async () => {
@@ -67,29 +60,28 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       })
       setUser(null)
-      window.location.href = "/auth/login"
-    } catch (err) {
-      console.error("Logout error:", err)
+      router.push("/auth/login")
+    } catch (error) {
+      console.error("Logout failed:", error)
     }
+  }
+
+  const refreshUser = async () => {
+    await fetchUser()
   }
 
   useEffect(() => {
     fetchUser()
   }, [])
 
-  return (
-    <DashboardContext.Provider
-      value={{
-        user,
-        loading,
-        error,
-        refreshUser,
-        logout,
-      }}
-    >
-      {children}
-    </DashboardContext.Provider>
-  )
+  const value = {
+    user,
+    loading,
+    logout,
+    refreshUser,
+  }
+
+  return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>
 }
 
 export function useDashboard() {

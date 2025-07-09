@@ -1,98 +1,92 @@
-import type React from "react"
-import { BarChart3, Bell, CreditCard, FileImage, HelpCircle, Home, Settings, Shield, Users, Zap } from "lucide-react"
+import {
+  BarChart3,
+  FileImage,
+  Monitor,
+  Settings,
+  Users,
+  CreditCard,
+  Bell,
+  HelpCircle,
+  User,
+  Package,
+  Shield,
+} from "lucide-react"
 
 export interface NavigationItem {
   title: string
   href: string
-  icon: React.ComponentType<{ className?: string }>
+  icon: any
   badge?: string
-  roles?: string[]
+  adminOnly?: boolean
+  superAdminOnly?: boolean
 }
 
-export interface NavigationSection {
-  title: string
-  items: NavigationItem[]
-}
-
-export const navigationConfig: NavigationSection[] = [
+export const mainNavigationItems: NavigationItem[] = [
   {
-    title: "Main",
-    items: [
-      {
-        title: "Dashboard",
-        href: "/dashboard",
-        icon: Home,
-      },
-      {
-        title: "Media Library",
-        href: "/dashboard/media",
-        icon: FileImage,
-      },
-      {
-        title: "Analytics",
-        href: "/dashboard/analytics",
-        icon: BarChart3,
-      },
-    ],
+    title: "Dashboard",
+    href: "/dashboard",
+    icon: BarChart3,
   },
   {
-    title: "Account",
-    items: [
-      {
-        title: "Profile",
-        href: "/dashboard/profile",
-        icon: Settings,
-      },
-      {
-        title: "Billing",
-        href: "/dashboard/billing",
-        icon: CreditCard,
-      },
-      {
-        title: "Notifications",
-        href: "/dashboard/notifications",
-        icon: Bell,
-      },
-      {
-        title: "Help & Support",
-        href: "/dashboard/help",
-        icon: HelpCircle,
-      },
-    ],
+    title: "Media Library",
+    href: "/dashboard/media",
+    icon: FileImage,
   },
   {
-    title: "Administration",
-    items: [
-      {
-        title: "User Management",
-        href: "/dashboard/admin/users",
-        icon: Users,
-        roles: ["admin", "super_admin"],
-      },
-      {
-        title: "Plan Management",
-        href: "/dashboard/admin/plans",
-        icon: Zap,
-        roles: ["super_admin"],
-      },
-      {
-        title: "System Settings",
-        href: "/dashboard/admin/settings",
-        icon: Shield,
-        roles: ["super_admin"],
-      },
-    ],
+    title: "Displays",
+    href: "/dashboard/displays",
+    icon: Monitor,
+    badge: "Soon",
   },
 ]
 
-export function getFilteredNavigation(userRole?: string): NavigationSection[] {
-  return navigationConfig
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((item) => {
-        if (!item.roles) return true
-        return userRole && item.roles.includes(userRole)
-      }),
-    }))
-    .filter((section) => section.items.length > 0)
-}
+export const accountNavigationItems: NavigationItem[] = [
+  {
+    title: "Profile",
+    href: "/dashboard/profile",
+    icon: User,
+  },
+  {
+    title: "Billing",
+    href: "/dashboard/billing",
+    icon: CreditCard,
+  },
+  {
+    title: "Notifications",
+    href: "/dashboard/notifications",
+    icon: Bell,
+  },
+  {
+    title: "Settings",
+    href: "/dashboard/settings",
+    icon: Settings,
+  },
+  {
+    title: "Help & Support",
+    href: "/dashboard/help",
+    icon: HelpCircle,
+  },
+]
+
+export const adminNavigationItems: NavigationItem[] = [
+  {
+    title: "User Management",
+    href: "/dashboard/admin/users",
+    icon: Users,
+    adminOnly: true,
+  },
+  {
+    title: "Plan Management",
+    href: "/dashboard/admin/plans",
+    icon: Package,
+    superAdminOnly: true,
+  },
+  {
+    title: "System Settings",
+    href: "/dashboard/admin/settings",
+    icon: Shield,
+    superAdminOnly: true,
+  },
+]
+
+export const navigationItems = [...mainNavigationItems, ...accountNavigationItems, ...adminNavigationItems]

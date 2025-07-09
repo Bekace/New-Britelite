@@ -1,34 +1,32 @@
 "use client"
 
-import { Badge } from "@/components/ui/badge"
+import React from "react"
+import Link from "next/link"
 
-export function DashboardFooter() {
+export const DashboardFooter = React.memo(function DashboardFooter() {
   return (
     <footer className="border-t bg-background">
-      <div className="container flex h-14 items-center justify-between">
+      <div className="flex h-12 items-center justify-between px-6 text-sm text-muted-foreground">
         <div className="flex items-center space-x-4">
-          <p className="text-sm text-muted-foreground">© 2024 BriteLite Digital. All rights reserved.</p>
+          <span>© 2024 BriteLite Digital Signage</span>
+          <span>•</span>
+          <Link href="/privacy" className="hover:text-foreground">
+            Privacy
+          </Link>
+          <span>•</span>
+          <Link href="/terms" className="hover:text-foreground">
+            Terms
+          </Link>
         </div>
-
         <div className="flex items-center space-x-4">
-          <Badge variant="outline" className="text-green-600 border-green-200">
-            System Online
-          </Badge>
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <a href="/help" className="hover:underline">
-              Help
-            </a>
-            <span>•</span>
-            <a href="/privacy" className="hover:underline">
-              Privacy
-            </a>
-            <span>•</span>
-            <a href="/terms" className="hover:underline">
-              Terms
-            </a>
+          <span>Version 1.0.0</span>
+          <span>•</span>
+          <div className="flex items-center space-x-1">
+            <div className="h-2 w-2 rounded-full bg-green-500" />
+            <span>All systems operational</span>
           </div>
         </div>
       </div>
     </footer>
   )
-}
+})

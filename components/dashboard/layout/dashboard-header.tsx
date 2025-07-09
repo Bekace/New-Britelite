@@ -1,8 +1,9 @@
 "use client"
 
-import { Bell, Search, User } from "lucide-react"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import React from "react"
+import { Bell, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,76 +12,68 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { useDashboard } from "../context/dashboard-context"
 
-export function DashboardHeader() {
-  const { user, logout } = useDashboard()
+export const DashboardHeader = React.memo(function DashboardHeader() {
+  const { user } = useDashboard()
 
-  const getInitials = (firstName?: string, lastName?: string) => {
-    return `${firstName?.charAt(0) || ""}${lastName?.charAt(0) || ""}`.toUpperCase()
+  const getGreeting = () => {
+    const hour = new Date().getHours()
+    if (hour < 12) return "Good morning"
+    if (hour < 18) return "Good afternoon"
+    return "Good evening"
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background">
-      <div className="container flex h-16 items-center space-x-4 sm:justify-between sm:space-x-0">
-        <div className="flex gap-6 md:gap-10">
-          <div className="flex items-center space-x-2">
-            <h1 className="text-xl font-bold">Welcome back, {user?.first_name || "User"}!</h1>
-          </div>
+    <header className="border-b bg-background">
+      <div className="flex h-16 items-center justify-between px-6">
+        {/* Welcome Message */}
+        <div>
+          <h1 className="text-2xl font-semibold">
+            {getGreeting()}, {user?.first_name}!
+          </h1>
+          <p className="text-sm text-muted-foreground">Welcome back to your digital signage dashboard</p>
         </div>
 
-        <div className="flex flex-1 items-center justify-end space-x-4">
-          <div className="w-full flex-1 md:w-auto md:flex-none">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input type="search" placeholder="Search..." className="pl-8 sm:w-[300px] md:w-[200px] lg:w-[300px]" />
-            </div>
+        {/* Actions */}
+        <div className="flex items-center space-x-4">
+          {/* Search */}
+          <div className="relative hidden md:block">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input placeholder="Search..." className="w-64 pl-10" />
           </div>
 
-          <Button variant="ghost" size="icon">
-            <Bell className="h-4 w-4" />
-            <span className="sr-only">Notifications</span>
-          </Button>
-
+          {/* Notifications */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={user?.avatar_url || "/placeholder.svg"} alt={user?.email} />
-                  <AvatarFallback>{getInitials(user?.first_name, user?.last_name)}</AvatarFallback>
-                </Avatar>
+              <Button variant="ghost" size="sm" className="relative">
+                <Bell className="h-4 w-4" />
+                <Badge variant="destructive" className="absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 text-xs">
+                  3
+                </Badge>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56" align="end" forceMount>
-              <DropdownMenuLabel className="font-normal">
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem>
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">
-                    {user?.first_name} {user?.last_name}
-                  </p>
-                  <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                  <p className="text-sm font-medium">New display connected</p>
+                  <p className="text-xs text-muted-foreground">Display "Lobby Screen" is now online</p>
                 </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <a href="/dashboard/profile">
-                  <User className="mr-2 h-4 w-4" />
-                  <span>Profile</span>
-                </a>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <a href="/dashboard/billing">
-                  <span>Billing</span>
-                </a>
+              <DropdownMenuItem>
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium">Storage limit warning</p>
+                  <p className="text-xs text-muted-foreground">You're using 85% of your storage quota</p>
+                </div>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <a href="/dashboard/settings">
-                  <span>Settings</span>
-                </a>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={logout}>
-                <span>Log out</span>
+              <DropdownMenuItem>
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium">Playlist updated</p>
+                  <p className="text-xs text-muted-foreground">"Morning Announcements" playlist was modified</p>
+                </div>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -88,4 +81,4 @@ export function DashboardHeader() {
       </div>
     </header>
   )
-}
+})
