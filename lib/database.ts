@@ -78,6 +78,35 @@ export interface AuditLog {
   created_at: Date
 }
 
+export interface MediaAsset {
+  id: string
+  user_id: string
+  folder_id?: string
+  filename: string
+  original_filename: string
+  file_type: string
+  file_size: number
+  mime_type: string
+  url: string
+  thumbnail_url?: string
+  width?: number
+  height?: number
+  duration?: number
+  metadata: Record<string, any>
+  created_at: Date
+  updated_at: Date
+}
+
+export interface MediaFolder {
+  id: string
+  user_id: string
+  parent_id?: string
+  name: string
+  path: string
+  created_at: Date
+  updated_at: Date
+}
+
 export const userQueries = {
   findByEmail: async (email: string): Promise<User | null> => {
     const result = await sql`
@@ -357,6 +386,141 @@ export const featureQueries = {
   },
 }
 
+export const mediaQueries = {
+  findAssetsByUser: async (userId: string, folderId?: string): Promise<MediaAsset[]> => {
+    const result = await sql`
+      SELECT * FROM media_assets
+      WHERE user_id = ${userId} 
+      ${folderId ? sql`AND folder_id = ${folderId}` : sql`AND folder_id IS NULL`}
+      ORDER BY created_at DESC
+    `
+    return result
+  },
+
+  findAssetById: async (id: string): Promise<MediaAsset | null> => {
+    const result = await sql`
+      SELECT * FROM media_assets
+      WHERE id = ${id}
+      LIMIT 1
+    `
+    return result[0] || null
+  },
+
+  createAsset: async (assetData: {
+    user_id: string
+    folder_id?: string
+    filename: string
+    original_filename: string
+    file_type: string
+    file_size: number
+    mime_type: string
+    url: string
+    thumbnail_url?: string
+    width?: number
+    height?: number
+    duration?: number
+    metadata: Record<string, any>
+  }): Promise<MediaAsset> => {
+    const result = await sql`
+      INSERT INTO media_assets (
+        user_id, folder_id, filename, original_filename, file_type, 
+        file_size, mime_type, url, thumbnail_url, width, height, 
+        duration, metadata
+      )
+      VALUES (
+        ${assetData.user_id}, ${assetData.folder_id || null}, ${assetData.filename}, 
+        ${assetData.original_filename}, ${assetData.file_type}, ${assetData.file_size}, 
+        ${assetData.mime_type}, ${assetData.url}, ${assetData.thumbnail_url || null}, 
+        ${assetData.width || null}, ${assetData.height || null}, 
+        ${assetData.duration || null}, ${JSON.stringify(assetData.metadata)}
+      )
+      RETURNING *
+    `
+    return result[0]
+  },
+
+  updateAsset: async (id: string, updates: Partial<MediaAsset>): Promise<MediaAsset | null> => {
+    const setClause = Object.keys(updates)
+      .map((key, index) => `${key} = $${index + 2}`)
+      .join(", ")
+
+    const values = [id, ...Object.values(updates)]
+
+    const result = await sql`
+      UPDATE media_assets 
+      SET ${sql.unsafe(setClause)}, updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `
+    return result[0] || null
+  },
+
+  deleteAsset: async (id: string): Promise<boolean> => {
+    const result = await sql`
+      DELETE FROM media_assets 
+      WHERE id = ${id}
+    `
+    return result.count > 0
+  },
+
+  findFoldersByUser: async (userId: string, parentId?: string): Promise<MediaFolder[]> => {
+    const result = await sql`
+      SELECT * FROM media_folders
+      WHERE user_id = ${userId} 
+      ${parentId ? sql`AND parent_id = ${parentId}` : sql`AND parent_id IS NULL`}
+      ORDER BY name ASC
+    `
+    return result
+  },
+
+  findFolderById: async (id: string): Promise<MediaFolder | null> => {
+    const result = await sql`
+      SELECT * FROM media_folders
+      WHERE id = ${id}
+      LIMIT 1
+    `
+    return result[0] || null
+  },
+
+  createFolder: async (folderData: {
+    user_id: string
+    parent_id?: string
+    name: string
+    path: string
+  }): Promise<MediaFolder> => {
+    const result = await sql`
+      INSERT INTO media_folders (user_id, parent_id, name, path)
+      VALUES (${folderData.user_id}, ${folderData.parent_id || null}, ${folderData.name}, ${folderData.path})
+      RETURNING *
+    `
+    return result[0]
+  },
+
+  updateFolder: async (id: string, updates: Partial<MediaFolder>): Promise<MediaFolder | null> => {
+    const setClause = Object.keys(updates)
+      .map((key, index) => `${key} = $${index + 2}`)
+      .join(", ")
+
+    const values = [id, ...Object.values(updates)]
+
+    const result = await sql`
+      UPDATE media_folders 
+      SET ${sql.unsafe(setClause)}, updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `
+    return result[0] || null
+  },
+
+  deleteFolder: async (id: string): Promise<boolean> => {
+    const result = await sql`
+      DELETE FROM media_folders 
+      WHERE id = ${id}
+    `
+    return result.count > 0
+  },
+}
+
 export const auditQueries = {
   log: async (logData: {
     user_id?: string
@@ -407,5 +571,8 @@ export const executeQuery = async (query: string, params: any[] = []): Promise<a
     throw error
   }
 }
+
+// Named export for sql
+export { sql }
 
 export default sql
