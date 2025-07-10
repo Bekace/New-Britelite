@@ -7,9 +7,8 @@ import type { User } from "@/lib/auth"
 interface DashboardContextType {
   user: User | null
   loading: boolean
-  error: string | null
+  setUser: (user: User | null) => void
   refreshUser: () => Promise<void>
-  logout: () => Promise<void>
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
@@ -17,66 +16,36 @@ const DashboardContext = createContext<DashboardContextType | undefined>(undefin
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
-  const fetchUser = async () => {
+  const refreshUser = async () => {
     try {
-      setLoading(true)
-      setError(null)
-
-      const response = await fetch("/api/auth/me", {
-        credentials: "include",
-      })
-
+      const response = await fetch("/api/auth/me")
       if (response.ok) {
-        const userData = await response.json()
-        setUser(userData.user)
+        const data = await response.json()
+        setUser(data.user)
       } else {
         setUser(null)
       }
-    } catch (err) {
-      console.error("Error fetching user:", err)
-      setError("Failed to load user data")
+    } catch (error) {
+      console.error("Failed to fetch user:", error)
       setUser(null)
     } finally {
       setLoading(false)
     }
   }
 
-  const refreshUser = async () => {
-    await fetchUser()
-  }
-
-  const logout = async () => {
-    try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      })
-      setUser(null)
-      window.location.href = "/auth/login"
-    } catch (err) {
-      console.error("Logout error:", err)
-    }
-  }
-
   useEffect(() => {
-    fetchUser()
+    refreshUser()
   }, [])
 
-  return (
-    <DashboardContext.Provider
-      value={{
-        user,
-        loading,
-        error,
-        refreshUser,
-        logout,
-      }}
-    >
-      {children}
-    </DashboardContext.Provider>
-  )
+  const value = {
+    user,
+    loading,
+    setUser,
+    refreshUser,
+  }
+
+  return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>
 }
 
 export function useDashboard() {
