@@ -1,31 +1,28 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { authService } from "@/lib/auth"
-import { sql } from "@/lib/database"
+import { getCurrentUserFromRequest } from "@/lib/auth"
+import { neon } from "@neondatabase/serverless"
+
+const sql = neon(process.env.DATABASE_URL!)
 
 export async function POST(request: NextRequest) {
   try {
     console.log("Database Debug API: POST request received")
 
-    const cookieStore = await cookies()
-    const sessionToken = cookieStore.get("session")?.value
-
-    console.log("Database Debug API: Session token exists:", !!sessionToken)
-
-    if (!sessionToken) {
-      console.log("Database Debug API: No session token found")
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
-    }
-
-    const user = await authService.verifySession(sessionToken)
-    console.log("Database Debug API: User verification result:", {
+    // Check authentication
+    const user = await getCurrentUserFromRequest(request)
+    console.log("Database Debug API: User check:", {
       userExists: !!user,
       userRole: user?.role,
       userId: user?.id,
     })
 
-    if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
-      console.log("Database Debug API: Access denied for role:", user?.role)
+    if (!user) {
+      console.log("Database Debug API: No authenticated user")
+      return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 })
+    }
+
+    if (user.role !== "admin" && user.role !== "super_admin") {
+      console.log("Database Debug API: Insufficient permissions")
       return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
     }
 
@@ -36,42 +33,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Query is required" }, { status: 400 })
     }
 
-    // Security check - only allow SELECT statements and basic operations
-    const trimmedQuery = query.trim().toLowerCase()
-    if (
-      !trimmedQuery.startsWith("select") &&
-      !trimmedQuery.startsWith("show") &&
-      !trimmedQuery.startsWith("describe")
-    ) {
-      return NextResponse.json(
-        { success: false, error: "Only SELECT, SHOW, and DESCRIBE queries are allowed" },
-        { status: 400 },
-      )
-    }
+    console.log("Database Debug API: Executing query:", query.substring(0, 100) + "...")
 
-    console.log("Database Debug API: Executing query:", query)
+    // Execute the query
+    const startTime = Date.now()
+    const result = await sql(query)
+    const executionTime = Date.now() - startTime
 
-    const result = await sql.unsafe(query)
-
-    console.log("Database Debug API: Query executed successfully, rows:", result.length)
+    console.log("Database Debug API: Query executed successfully in", executionTime, "ms")
 
     return NextResponse.json({
       success: true,
       data: {
         rows: result,
-        count: result.length,
         sql: query,
       },
       query,
       executedAt: new Date().toISOString(),
       executedBy: user.email,
+      executionTime,
     })
   } catch (error) {
-    console.error("Database Debug API: Error:", error)
+    console.error("Database Debug API: Error executing query:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Database query failed",
+        error: "Query execution failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },

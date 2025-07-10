@@ -30,20 +30,24 @@ export default function DebugPage() {
     setMounted(true)
   }, [])
 
-  const addResult = (result: TestResult) => {
-    setResults((prev) => [...prev, result])
-  }
-
-  const addCustomResult = (result: TestResult) => {
-    setCustomResults((prev) => [...prev, result])
+  const updateResult = (name: string, updates: Partial<TestResult>) => {
+    setResults((prev) => {
+      const existingIndex = prev.findIndex((r) => r.name === name)
+      if (existingIndex >= 0) {
+        const updated = [...prev]
+        updated[existingIndex] = { ...updated[existingIndex], ...updates }
+        return updated
+      } else {
+        return [...prev, { name, ...updates } as TestResult]
+      }
+    })
   }
 
   const runTest = async (name: string, testFn: () => Promise<any>) => {
     const startTime = Date.now()
     const timestamp = new Date().toLocaleTimeString()
 
-    addResult({
-      name,
+    updateResult(name, {
       status: "pending",
       timestamp,
     })
@@ -52,8 +56,7 @@ export default function DebugPage() {
       const data = await testFn()
       const duration = Date.now() - startTime
 
-      addResult({
-        name,
+      updateResult(name, {
         status: "success",
         duration,
         timestamp,
@@ -62,8 +65,7 @@ export default function DebugPage() {
     } catch (error) {
       const duration = Date.now() - startTime
 
-      addResult({
-        name,
+      updateResult(name, {
         status: "error",
         duration,
         timestamp,
@@ -180,12 +182,16 @@ export default function DebugPage() {
 
     const startTime = Date.now()
     const timestamp = new Date().toLocaleTimeString()
+    const queryName = `Custom Query: ${sqlQuery.substring(0, 50)}...`
 
-    addCustomResult({
-      name: `Custom Query: ${sqlQuery.substring(0, 50)}...`,
-      status: "pending",
-      timestamp,
-    })
+    setCustomResults((prev) => [
+      ...prev,
+      {
+        name: queryName,
+        status: "pending",
+        timestamp,
+      },
+    ])
 
     try {
       const response = await fetch("/api/debug/database", {
@@ -206,24 +212,30 @@ export default function DebugPage() {
         throw new Error(`${response.status}: ${data.error || response.statusText}`)
       }
 
-      addCustomResult({
-        name: `Custom Query: ${sqlQuery.substring(0, 50)}...`,
-        status: "success",
-        duration,
-        timestamp,
-        data,
-      })
+      setCustomResults((prev) => [
+        ...prev.filter((r) => r.name !== queryName),
+        {
+          name: queryName,
+          status: "success",
+          duration,
+          timestamp,
+          data,
+        },
+      ])
     } catch (error) {
       const duration = Date.now() - startTime
 
-      addCustomResult({
-        name: `Custom Query: ${sqlQuery.substring(0, 50)}...`,
-        status: "error",
-        duration,
-        timestamp,
-        error: error instanceof Error ? error.message : "Unknown error",
-        data: error,
-      })
+      setCustomResults((prev) => [
+        ...prev.filter((r) => r.name !== queryName),
+        {
+          name: queryName,
+          status: "error",
+          duration,
+          timestamp,
+          error: error instanceof Error ? error.message : "Unknown error",
+          data: error,
+        },
+      ])
     }
   }
 
@@ -245,7 +257,7 @@ export default function DebugPage() {
       case "success":
         return (
           <Badge variant="default" className="bg-green-500">
-            Test passed
+            PASS
           </Badge>
         )
       case "error":
@@ -288,6 +300,15 @@ export default function DebugPage() {
           )}
         </Button>
       </div>
+
+      {/* Critical Issue Alert */}
+      <Alert className="border-red-200 bg-red-50">
+        <AlertTriangle className="h-4 w-4 text-red-600" />
+        <AlertDescription className="text-red-800">
+          <strong>Issue Found:</strong> Your user role is "admin" but the Plans API requires "super_admin" access. You
+          need to update your user role in the database to access plan management.
+        </AlertDescription>
+      </Alert>
 
       <Tabs defaultValue="results" className="space-y-4">
         <TabsList className="grid w-full grid-cols-4">
@@ -365,10 +386,20 @@ export default function DebugPage() {
                   rows={4}
                 />
               </div>
-              <Button onClick={runCustomQuery} disabled={!sqlQuery.trim()}>
-                <Database className="mr-2 h-4 w-4" />
-                Execute Query
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={runCustomQuery} disabled={!sqlQuery.trim()}>
+                  <Database className="mr-2 h-4 w-4" />
+                  Execute Query
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setSqlQuery("UPDATE users SET role = 'super_admin' WHERE email = 'bekace.multimedia@gmail.com';")
+                  }
+                >
+                  Fix My Role
+                </Button>
+              </div>
 
               {customResults.length > 0 && (
                 <div className="space-y-3 mt-4">
@@ -444,43 +475,6 @@ export default function DebugPage() {
           </Card>
         </TabsContent>
       </Tabs>
-
-      {results.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Detailed Results</CardTitle>
-            <CardDescription>Raw response data from all tests</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {results.map((result, index) => (
-                <details key={index} className="border rounded-lg">
-                  <summary className="p-4 cursor-pointer hover:bg-muted/50">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(result.status)}
-                        <span className="font-medium">{result.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {result.duration && <Badge variant="outline">{result.duration}ms</Badge>}
-                        <Badge variant="outline">{result.timestamp}</Badge>
-                        {getStatusBadge(result.status)}
-                      </div>
-                    </div>
-                    {result.error && <div className="text-sm text-red-600 mt-1">{result.error}</div>}
-                  </summary>
-                  <div className="p-4 border-t bg-muted/20">
-                    <h4 className="font-medium mb-2">Response Data:</h4>
-                    <pre className="text-sm bg-background p-3 rounded border overflow-auto">
-                      {JSON.stringify(result.data, null, 2)}
-                    </pre>
-                  </div>
-                </details>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }
