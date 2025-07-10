@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { sql } from "@/lib/database"
+import { userQueries, sessionQueries, auditQueries } from "@/lib/database"
 import bcrypt from "bcryptjs"
 import crypto from "crypto"
 
@@ -12,19 +12,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Find user by email
-    const result = await sql`
-      SELECT id, email, password_hash, first_name, last_name, role, is_email_verified, 
-             p.name as plan_name, u.business_name
-      FROM users u
-      LEFT JOIN plans p ON u.plan_id = p.id
-      WHERE u.email = ${email.toLowerCase()}
-    `
-
-    if (result.length === 0) {
+    const user = await userQueries.findByEmail(email.toLowerCase())
+    if (!user) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
     }
-
-    const user = result[0]
 
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password_hash)
@@ -48,37 +39,33 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
 
     // Create session
-    await sql`
-      INSERT INTO user_sessions (user_id, session_token, expires_at)
-      VALUES (${user.id}, ${sessionToken}, ${expiresAt})
-    `
+    await sessionQueries.create(user.id, sessionToken, expiresAt)
 
     // Log the login
-    await sql`
-      INSERT INTO audit_logs (user_id, action, details, ip_address, user_agent, created_at)
-      VALUES (
-        ${user.id}, 
-        'user_login', 
-        ${JSON.stringify({ email: user.email })},
-        ${request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"},
-        ${request.headers.get("user-agent") || "unknown"},
-        NOW()
-      )
-    `
+    await auditQueries.log({
+      user_id: user.id,
+      action: "user_login",
+      details: { email: user.email },
+      ip_address: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown",
+      user_agent: request.headers.get("user-agent") || "unknown",
+    })
+
+    // Get user with plan info
+    const userWithPlan = await userQueries.findById(user.id)
 
     // Create response
     const response = NextResponse.json({
       success: true,
       message: "Login successful",
       user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        role: user.role,
-        isEmailVerified: user.is_email_verified,
-        planName: user.plan_name,
-        businessName: user.business_name,
+        id: userWithPlan.id,
+        email: userWithPlan.email,
+        firstName: userWithPlan.first_name,
+        lastName: userWithPlan.last_name,
+        role: userWithPlan.role,
+        isEmailVerified: userWithPlan.is_email_verified,
+        planName: userWithPlan.plan_name,
+        businessName: userWithPlan.business_name,
       },
     })
 
