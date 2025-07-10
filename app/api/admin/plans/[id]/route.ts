@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     const planId = params.id
 
-    // Fetch specific plan with user count
+    // Fetch plan with user count
     const result = await sql`
       SELECT 
         p.*,
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ success: false, error: "Plan not found" }, { status: 404 })
     }
 
-    console.log("Plans [id] API: Plan found:", result[0].name)
+    console.log("Plans [id] API: Plan fetched successfully")
 
     return NextResponse.json({
       success: true,
@@ -78,16 +78,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ success: false, error: "Super admin access required" }, { status: 403 })
     }
 
-    const planId = params.id
     const body = await request.json()
-    console.log("Plans [id] API: Update body:", body)
-
     const { name, description, price, billing_cycle, max_screens, max_storage_gb, max_playlists, is_active } = body
 
-    // Validate required fields
     if (!name || price === undefined) {
       return NextResponse.json({ success: false, error: "Name and price are required" }, { status: 400 })
     }
+
+    const planId = params.id
 
     // Update plan
     const result = await sql`
@@ -110,7 +108,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ success: false, error: "Plan not found" }, { status: 404 })
     }
 
-    console.log("Plans [id] API: Plan updated successfully:", result[0].name)
+    console.log("Plans [id] API: Plan updated successfully")
 
     return NextResponse.json({
       success: true,
@@ -149,20 +147,14 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const planId = params.id
 
     // Check if plan has active users
-    const userCheck = await sql`
-      SELECT COUNT(*) as user_count 
+    const userCount = await sql`
+      SELECT COUNT(*) as count 
       FROM users 
       WHERE plan_id = ${planId} AND is_active = true
     `
 
-    if (userCheck[0].user_count > 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Cannot delete plan with active users",
-        },
-        { status: 400 },
-      )
+    if (userCount[0].count > 0) {
+      return NextResponse.json({ success: false, error: "Cannot delete plan with active users" }, { status: 400 })
     }
 
     // Delete plan
@@ -176,7 +168,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ success: false, error: "Plan not found" }, { status: 404 })
     }
 
-    console.log("Plans [id] API: Plan deleted successfully:", result[0].name)
+    console.log("Plans [id] API: Plan deleted successfully")
 
     return NextResponse.json({
       success: true,

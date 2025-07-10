@@ -5,72 +5,82 @@ import { sessionQueries } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("Debug Session API: GET request received")
+    console.log("Session Debug API: GET request received")
 
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
 
-    console.log("Debug Session API: Session token exists:", !!sessionToken)
+    console.log("Session Debug API: Session token exists:", !!sessionToken)
     console.log(
-      "Debug Session API: Session token preview:",
-      sessionToken ? sessionToken.substring(0, 10) + "..." : "null",
+      "Session Debug API: Session token preview:",
+      sessionToken ? sessionToken.substring(0, 20) + "..." : "null",
     )
 
+    const debugInfo: any = {
+      hasSessionCookie: !!sessionToken,
+      sessionTokenPreview: sessionToken ? sessionToken.substring(0, 20) + "..." : null,
+      cookieNames: (await cookies()).getAll().map((c) => c.name),
+      timestamp: new Date().toISOString(),
+    }
+
     if (!sessionToken) {
+      console.log("Session Debug API: No session token found")
       return NextResponse.json({
         success: false,
-        error: "No session token found",
-        sessionToken: null,
-        cookies: Object.fromEntries(cookieStore.getAll().map((c) => [c.name, c.value])),
+        error: "No session token",
+        debug: debugInfo,
       })
     }
 
-    // Verify session using auth service
+    // Try to verify session
     const user = await authService.verifySession(sessionToken)
-    console.log("Debug Session API: Auth service verification:", {
+    console.log("Session Debug API: User verification result:", {
       userExists: !!user,
       userRole: user?.role,
       userId: user?.id,
     })
 
-    // Get raw session data from database
-    let rawSessionData = null
+    debugInfo.userVerified = !!user
+    debugInfo.userRole = user?.role
+    debugInfo.userId = user?.id
+    debugInfo.userEmail = user?.email
+
+    // Get raw session data
     try {
-      rawSessionData = await sessionQueries.findByToken(sessionToken)
-      console.log("Debug Session API: Raw session data:", {
-        sessionExists: !!rawSessionData,
-        sessionUserId: rawSessionData?.id,
-        sessionRole: rawSessionData?.role,
-      })
-    } catch (error) {
-      console.error("Debug Session API: Error fetching raw session:", error)
+      const rawSession = await sessionQueries.findByToken(sessionToken)
+      console.log("Session Debug API: Raw session data exists:", !!rawSession)
+
+      debugInfo.rawSessionExists = !!rawSession
+      if (rawSession) {
+        debugInfo.rawSessionData = {
+          user_id: rawSession.user_id,
+          email: rawSession.email,
+          role: rawSession.role,
+          expires_at: rawSession.expires_at,
+          created_at: rawSession.created_at,
+        }
+      }
+    } catch (sessionError) {
+      console.error("Session Debug API: Error fetching raw session:", sessionError)
+      debugInfo.rawSessionError = sessionError instanceof Error ? sessionError.message : "Unknown error"
     }
 
     return NextResponse.json({
       success: true,
-      sessionToken: sessionToken ? sessionToken.substring(0, 20) + "..." : null,
-      authServiceResult: user
+      user: user
         ? {
             id: user.id,
             email: user.email,
+            first_name: user.first_name,
+            last_name: user.last_name,
             role: user.role,
             is_email_verified: user.is_email_verified,
           }
         : null,
-      rawSessionData: rawSessionData
-        ? {
-            id: rawSessionData.id,
-            email: rawSessionData.email,
-            role: rawSessionData.role,
-            is_email_verified: rawSessionData.is_email_verified,
-            plan_name: rawSessionData.plan_name,
-          }
-        : null,
-      cookies: Object.fromEntries(cookieStore.getAll().map((c) => [c.name, c.value.substring(0, 20) + "..."])),
-      timestamp: new Date().toISOString(),
+      debug: debugInfo,
     })
   } catch (error) {
-    console.error("Debug Session API: Error:", error)
+    console.error("Session Debug API: Error:", error)
     return NextResponse.json(
       {
         success: false,

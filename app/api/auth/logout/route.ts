@@ -12,9 +12,8 @@ export async function POST(request: NextRequest) {
     console.log("Logout API: Session token exists:", !!sessionToken)
 
     if (sessionToken) {
-      // Delete session from database
       await authService.logout(sessionToken)
-      console.log("Logout API: Session deleted from database")
+      console.log("Logout API: Session invalidated")
     }
 
     // Clear the session cookie
@@ -27,11 +26,11 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
+      maxAge: 0,
       path: "/",
-      expires: new Date(0), // Expire immediately
     })
 
-    console.log("Logout API: Session cookie cleared")
+    console.log("Logout API: Cookie cleared")
 
     return response
   } catch (error) {
