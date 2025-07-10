@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     // Fetch all active plans with their assigned features
     const plans = await sql`
       SELECT 
-        p.id, p.name, p.description, p.price, p.billing_cycle,
+        p.id, p.name, p.description, p.price_monthly as price, p.billing_cycle,
         p.max_screens, p.max_storage_gb, p.max_playlists,
         p.is_active, p.created_at,
         COALESCE(
@@ -30,10 +30,10 @@ export async function GET(request: NextRequest) {
       LEFT JOIN plan_feature_assignments pfa ON p.id = pfa.plan_id AND pfa.is_enabled = true
       LEFT JOIN plan_features pf ON pfa.feature_id = pf.id AND pf.is_active = true
       WHERE p.is_active = true 
-      GROUP BY p.id, p.name, p.description, p.price, p.billing_cycle,
+      GROUP BY p.id, p.name, p.description, p.price_monthly, p.billing_cycle,
                p.max_screens, p.max_storage_gb, p.max_playlists,
                p.is_active, p.created_at
-      ORDER BY p.price ASC
+      ORDER BY p.price_monthly ASC
     `
 
     console.log("Plans with features fetched successfully:", plans.length)
@@ -54,12 +54,12 @@ export async function GET(request: NextRequest) {
       console.log("Attempting fallback query without features...")
       const basicPlans = await sql`
         SELECT 
-          id, name, description, price, billing_cycle,
+          id, name, description, price_monthly as price, 'monthly' as billing_cycle,
           max_screens, max_storage_gb, max_playlists,
           is_active, created_at
         FROM plans 
         WHERE is_active = true 
-        ORDER BY price ASC
+        ORDER BY price_monthly ASC
       `
 
       console.log("Basic plans fetched successfully:", basicPlans.length)
@@ -75,12 +75,12 @@ export async function GET(request: NextRequest) {
     } catch (fallbackError) {
       console.error("Fallback query also failed:", fallbackError)
 
-      // Final fallback: return mock data
+      // Final fallback: return mock data that matches the expected structure
       return NextResponse.json({
         success: true,
         plans: [
           {
-            id: "1",
+            id: "free-plan",
             name: "Free",
             description: "Perfect for getting started",
             price: 0,
@@ -93,10 +93,10 @@ export async function GET(request: NextRequest) {
             created_at: new Date().toISOString(),
           },
           {
-            id: "2",
+            id: "starter-plan",
             name: "Starter",
             description: "Great for small businesses",
-            price: 29,
+            price: 29.99,
             billing_cycle: "monthly",
             max_screens: 5,
             max_storage_gb: 10,
@@ -119,10 +119,10 @@ export async function GET(request: NextRequest) {
             created_at: new Date().toISOString(),
           },
           {
-            id: "3",
+            id: "professional-plan",
             name: "Professional",
             description: "Perfect for growing teams",
-            price: 99,
+            price: 79.99,
             billing_cycle: "monthly",
             max_screens: 25,
             max_storage_gb: 100,
@@ -157,10 +157,10 @@ export async function GET(request: NextRequest) {
             created_at: new Date().toISOString(),
           },
           {
-            id: "4",
+            id: "enterprise-plan",
             name: "Enterprise",
             description: "For large organizations",
-            price: 299,
+            price: 199.99,
             billing_cycle: "monthly",
             max_screens: 100,
             max_storage_gb: 1000,
