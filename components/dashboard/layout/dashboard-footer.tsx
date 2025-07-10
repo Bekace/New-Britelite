@@ -1,16 +1,18 @@
+"use client"
+
 export function DashboardFooter() {
   return (
-    <footer className="border-t bg-background px-6 py-4">
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <p>&copy; 2024 Digital Signage Platform. All rights reserved.</p>
+    <footer className="bg-white border-t border-gray-200 px-6 py-4">
+      <div className="flex items-center justify-between text-sm text-gray-500">
+        <div>© 2024 Digital Signage Platform. All rights reserved.</div>
         <div className="flex items-center space-x-4">
-          <a href="/privacy" className="hover:text-foreground">
-            Privacy Policy
+          <a href="#" className="hover:text-gray-700">
+            Privacy
           </a>
-          <a href="/terms" className="hover:text-foreground">
-            Terms of Service
+          <a href="#" className="hover:text-gray-700">
+            Terms
           </a>
-          <a href="/support" className="hover:text-foreground">
+          <a href="#" className="hover:text-gray-700">
             Support
           </a>
         </div>

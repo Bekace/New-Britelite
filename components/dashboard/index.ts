@@ -1,6 +1,4 @@
 export { DashboardLayout } from "./layout/dashboard-layout"
 export { DashboardProvider, useDashboard } from "./context/dashboard-context"
-export { DashboardSidebar } from "./layout/dashboard-sidebar"
-export { DashboardHeader } from "./layout/dashboard-header"
-export { DashboardFooter } from "./layout/dashboard-footer"
-export { getNavigationConfig } from "./config/navigation"
+export { getNavigationConfig, filterNavigationByRole } from "./config/navigation"
+export type { NavigationItem, NavigationSection } from "./config/navigation"

@@ -2,17 +2,7 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
-
-interface User {
-  id: string
-  email: string
-  firstName: string
-  lastName: string
-  role: "user" | "admin" | "super_admin"
-  isEmailVerified: boolean
-  planName?: string
-  businessName?: string
-}
+import type { User } from "@/lib/auth"
 
 interface DashboardContextType {
   user: User | null
@@ -33,10 +23,13 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       setError(null)
 
-      const response = await fetch("/api/auth/me")
+      const response = await fetch("/api/auth/me", {
+        credentials: "include",
+      })
+
       if (response.ok) {
-        const data = await response.json()
-        setUser(data.user)
+        const userData = await response.json()
+        setUser(userData.user)
       } else if (response.status === 401) {
         setUser(null)
       } else {
@@ -44,7 +37,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.error("Error fetching user:", err)
-      setError("Failed to load user data")
+      setError(err instanceof Error ? err.message : "Failed to fetch user")
       setUser(null)
     } finally {
       setLoading(false)
@@ -59,7 +52,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     fetchUser()
   }, [])
 
-  const value = {
+  const value: DashboardContextType = {
     user,
     loading,
     error,
