@@ -13,6 +13,7 @@ import {
   Users,
   Package,
   Shield,
+  Bug,
 } from "lucide-react"
 import type { User as UserType } from "@/lib/auth"
 
@@ -115,6 +116,12 @@ export function getNavigationConfig(user: UserType | null): NavigationSection[] 
           href: "/dashboard/admin/system",
           icon: Shield,
           roles: ["super_admin"],
+        },
+        {
+          title: "Debug Dashboard",
+          href: "/dashboard/debug",
+          icon: Bug,
+          roles: ["admin", "super_admin"],
         },
       ],
     })

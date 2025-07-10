@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 0, // Expire immediately
+      maxAge: 0,
       path: "/",
     })
 
@@ -35,11 +35,11 @@ export async function POST(request: NextRequest) {
 
     return response
   } catch (error) {
-    console.error("Logout API: Error in POST handler:", error)
+    console.error("Logout API: Error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Internal server error",
+        error: "Logout failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },
