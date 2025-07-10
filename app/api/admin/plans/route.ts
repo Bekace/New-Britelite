@@ -11,17 +11,23 @@ export async function GET(request: NextRequest) {
     const sessionToken = cookieStore.get("session")?.value
 
     console.log("Plans API: Session token exists:", !!sessionToken)
+    console.log(
+      "Plans API: All cookies:",
+      cookieStore.getAll().map((c) => c.name),
+    )
 
     if (!sessionToken) {
       console.log("Plans API: No session token found")
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
     }
 
+    console.log("Plans API: Verifying session...")
     const user = await authService.verifySession(sessionToken)
     console.log("Plans API: User verification result:", {
       userExists: !!user,
       userRole: user?.role,
       userId: user?.id,
+      userEmail: user?.email,
     })
 
     if (!user) {
@@ -29,12 +35,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid session" }, { status: 401 })
     }
 
-    if (user.role !== "super_admin") {
+    // Allow both admin and super_admin roles
+    if (user.role !== "admin" && user.role !== "super_admin") {
       console.log("Plans API: Access denied for role:", user.role)
-      return NextResponse.json({ success: false, error: "Super admin access required" }, { status: 403 })
+      return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
     }
 
-    console.log("Plans API: Fetching plans from database")
+    console.log("Plans API: User authorized, fetching plans...")
 
     // Fetch all plans with user counts
     const plans = await sql`
@@ -47,10 +54,7 @@ export async function GET(request: NextRequest) {
       ORDER BY p.created_at DESC
     `
 
-    console.log("Plans API: Database query result:", {
-      planCount: plans.length,
-      plans: plans.map((p) => ({ id: p.id, name: p.name, user_count: p.user_count })),
-    })
+    console.log("Plans API: Plans fetched successfully, count:", plans.length)
 
     return NextResponse.json({
       success: true,
@@ -88,9 +92,9 @@ export async function POST(request: NextRequest) {
       userRole: user?.role,
     })
 
-    if (!user || user.role !== "super_admin") {
+    if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
       console.log("Plans API: Access denied for role:", user?.role)
-      return NextResponse.json({ success: false, error: "Super admin access required" }, { status: 403 })
+      return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
     }
 
     const body = await request.json()

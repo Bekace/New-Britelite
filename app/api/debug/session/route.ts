@@ -4,73 +4,53 @@ import { authService } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("Session Debug API: GET request received")
+    console.log("Debug Session API: GET request received")
 
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
     const allCookies = cookieStore.getAll()
 
-    console.log(
-      "Session Debug API: Found cookies:",
-      allCookies.map((c) => c.name),
-    )
+    console.log("Debug Session API: Session token exists:", !!sessionToken)
+    console.log("Debug Session API: All cookies count:", allCookies.length)
 
-    let sessionData = null
-    let user = null
-
-    if (sessionToken) {
-      try {
-        user = await authService.verifySession(sessionToken)
-        sessionData = {
-          token: sessionToken.substring(0, 10) + "...",
-          valid: !!user,
-          user: user
-            ? {
-                id: user.id,
-                email: user.email,
-                role: user.role,
-                verified: user.is_email_verified,
-              }
-            : null,
-        }
-      } catch (error) {
-        console.log("Session Debug API: Session verification failed:", error)
-        sessionData = {
-          token: sessionToken.substring(0, 10) + "...",
-          valid: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        }
-      }
+    if (!sessionToken) {
+      console.log("Debug Session API: No session token found")
+      return NextResponse.json({
+        success: false,
+        error: "No session token found",
+        cookies: allCookies.map((c) => ({ name: c.name, hasValue: !!c.value })),
+        sessionToken: null,
+      })
     }
 
-    const debugInfo = {
-      timestamp: new Date().toISOString(),
-      cookies: {
-        all: allCookies.map((c) => ({ name: c.name, hasValue: !!c.value })),
-        session: sessionToken
-          ? {
-              exists: true,
-              length: sessionToken.length,
-              preview: sessionToken.substring(0, 10) + "...",
-            }
-          : null,
-      },
-      session: sessionData,
-      headers: {
-        userAgent: request.headers.get("user-agent"),
-        origin: request.headers.get("origin"),
-        referer: request.headers.get("referer"),
-      },
-    }
+    console.log("Debug Session API: Verifying session...")
+    const user = await authService.verifySession(sessionToken)
 
-    console.log("Session Debug API: Returning debug info")
+    console.log("Debug Session API: User verification result:", {
+      userExists: !!user,
+      userRole: user?.role,
+      userId: user?.id,
+      userEmail: user?.email,
+    })
 
     return NextResponse.json({
       success: true,
-      data: debugInfo,
+      sessionToken: sessionToken.substring(0, 20) + "...",
+      user: user
+        ? {
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            is_email_verified: user.is_email_verified,
+          }
+        : null,
+      cookies: allCookies.map((c) => ({ name: c.name, hasValue: !!c.value })),
+      timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("Session Debug API: Error:", error)
+    console.error("Debug Session API: Error:", error)
     return NextResponse.json(
       {
         success: false,

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { sessionQueries } from "@/lib/database"
+import { authService } from "@/lib/auth"
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,34 +9,33 @@ export async function POST(request: NextRequest) {
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
 
+    console.log("Logout API: Session token exists:", !!sessionToken)
+
     if (sessionToken) {
-      console.log("Logout API: Deleting session from database")
-      await sessionQueries.delete(sessionToken)
+      console.log("Logout API: Logging out session...")
+      await authService.logout(sessionToken)
     }
 
-    console.log("Logout API: Clearing session cookie")
-
+    // Clear the session cookie
     const response = NextResponse.json({
       success: true,
       message: "Logged out successfully",
     })
 
-    // Clear the session cookie
     response.cookies.set("session", "", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
+      maxAge: 0,
       path: "/",
-      expires: new Date(0),
     })
 
-    console.log("Logout API: Logout completed successfully")
+    console.log("Logout API: Session cleared successfully")
 
     return response
   } catch (error) {
-    console.error("Logout API: Error during logout:", error)
-
-    const response = NextResponse.json(
+    console.error("Logout API: Error:", error)
+    return NextResponse.json(
       {
         success: false,
         error: "Logout failed",
@@ -44,16 +43,5 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 },
     )
-
-    // Still try to clear the cookie even if database operation failed
-    response.cookies.set("session", "", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      expires: new Date(0),
-    })
-
-    return response
   }
 }
