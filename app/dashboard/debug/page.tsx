@@ -3,443 +3,391 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle, XCircle, Clock, AlertTriangle, Database, User, Cookie, Settings } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import {
+  RefreshCw,
+  Database,
+  User,
+  Settings,
+  ChevronDown,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Play,
+} from "lucide-react"
 
-interface TestResult {
-  id: string
-  name: string
-  status: "pending" | "success" | "error"
-  duration?: number
+interface DebugInfo {
   timestamp: string
-  error?: string
-  data?: any
+  user: any
+  database: any
+  session: any
 }
 
 export default function DebugPage() {
-  const [results, setResults] = useState<TestResult[]>([])
-  const [isRunning, setIsRunning] = useState(false)
-  const [customQuery, setCustomQuery] = useState("SELECT id, email, role FROM users LIMIT 5;")
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [customQuery, setCustomQuery] = useState("")
   const [queryResult, setQueryResult] = useState<any>(null)
-  const [mounted, setMounted] = useState(false)
+  const [queryLoading, setQueryLoading] = useState(false)
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    session: true,
+    database: true,
+    user: true,
+  })
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  const updateResult = (id: string, updates: Partial<TestResult>) => {
-    setResults((prev) => {
-      const existingIndex = prev.findIndex((r) => r.id === id)
-      if (existingIndex >= 0) {
-        const updated = [...prev]
-        updated[existingIndex] = { ...updated[existingIndex], ...updates }
-        return updated
-      } else {
-        return [...prev, { id, name: id, status: "pending", timestamp: new Date().toISOString(), ...updates }]
-      }
-    })
-  }
-
-  const runTest = async (testId: string, testName: string, testFn: () => Promise<any>) => {
-    const startTime = Date.now()
-    updateResult(testId, { name: testName, status: "pending", timestamp: new Date().toISOString() })
-
+  const fetchDebugInfo = async () => {
     try {
-      const result = await testFn()
-      const duration = Date.now() - startTime
-      updateResult(testId, {
-        status: "success",
-        duration,
-        data: result,
+      setLoading(true)
+      setError(null)
+
+      const [sessionResponse, databaseResponse] = await Promise.all([
+        fetch("/api/debug/session", { credentials: "include" }),
+        fetch("/api/debug/database", { credentials: "include" }),
+      ])
+
+      const sessionData = await sessionResponse.json()
+      const databaseData = await databaseResponse.json()
+
+      setDebugInfo({
         timestamp: new Date().toISOString(),
+        session: sessionData.success ? sessionData.debug : { error: sessionData.error },
+        database: databaseData.success ? databaseData.debug : { error: databaseData.error },
+        user: sessionData.success ? sessionData.debug.user : null,
       })
-      return result
-    } catch (error) {
-      const duration = Date.now() - startTime
-      updateResult(testId, {
-        status: "error",
-        duration,
-        error: error instanceof Error ? error.message : "Unknown error",
-        timestamp: new Date().toISOString(),
-      })
-      throw error
-    }
-  }
-
-  const runAllTests = async () => {
-    setIsRunning(true)
-    setResults([])
-
-    try {
-      // Test 1: Current User
-      await runTest("current-user", "Current User (/api/auth/me)", async () => {
-        const response = await fetch("/api/auth/me", {
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(`${response.status}: ${data.error || response.statusText}`)
-        return data
-      })
-
-      // Test 2: Plans API
-      await runTest("plans-api", "Plans API (/api/admin/plans)", async () => {
-        const response = await fetch("/api/admin/plans", {
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(`${response.status}: ${data.error || response.statusText}`)
-        return data
-      })
-
-      // Test 3: Database Connection
-      await runTest("database", "Database Connection", async () => {
-        const response = await fetch("/api/debug/database", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: "SELECT 1 as test_connection;" }),
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(`${response.status}: ${data.error || response.statusText}`)
-        return data
-      })
-
-      // Test 4: Session Debug
-      await runTest("session", "Session Debug", async () => {
-        const response = await fetch("/api/debug/session", {
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(`${response.status}: ${data.error || response.statusText}`)
-        return data
-      })
-
-      // Test 5: Check User Roles
-      await runTest("user-roles", "User Roles Check", async () => {
-        const response = await fetch("/api/debug/database", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query: "SELECT id, email, role FROM users WHERE email = 'bekace.multimedia@gmail.com';",
-          }),
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(`${response.status}: ${data.error || response.statusText}`)
-        return data
-      })
-
-      // Test 6: Check Role Constraints
-      await runTest("role-constraints", "Role Constraints Check", async () => {
-        const response = await fetch("/api/debug/database", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query: `SELECT column_name, data_type, is_nullable, column_default 
-                    FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'role';`,
-          }),
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(`${response.status}: ${data.error || response.statusText}`)
-        return data
-      })
-
-      // Test 7: Browser Cookies
-      await runTest("cookies", "Browser Cookies", async () => {
-        if (!mounted) return { allCookies: {}, hasSession: false, sessionValue: null }
-
-        const allCookies = document.cookie.split(";").reduce(
-          (acc, cookie) => {
-            const [name, value] = cookie.trim().split("=")
-            if (name) acc[name] = value || ""
-            return acc
-          },
-          {} as Record<string, string>,
-        )
-
-        return {
-          allCookies,
-          hasSession: "session" in allCookies,
-          sessionValue: allCookies.session || null,
-        }
-      })
-    } catch (error) {
-      console.error("Test suite error:", error)
+    } catch (err) {
+      console.error("Debug fetch error:", err)
+      setError(err instanceof Error ? err.message : "Failed to fetch debug info")
     } finally {
-      setIsRunning(false)
+      setLoading(false)
     }
   }
 
   const executeCustomQuery = async () => {
+    if (!customQuery.trim()) return
+
     try {
-      setQueryResult({ loading: true })
+      setQueryLoading(true)
+      setQueryResult(null)
+
       const response = await fetch("/api/debug/database", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: customQuery }),
+        body: JSON.stringify({
+          query: customQuery,
+        }),
       })
+
       const data = await response.json()
       setQueryResult(data)
-    } catch (error) {
+    } catch (err) {
+      console.error("Query execution error:", err)
       setQueryResult({
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: err instanceof Error ? err.message : "Query failed",
       })
+    } finally {
+      setQueryLoading(false)
     }
   }
 
   const fixUserRole = async () => {
     try {
+      setQueryLoading(true)
+
       const response = await fetch("/api/debug/database", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          query: `UPDATE users SET role = 'admin' WHERE email = 'bekace.multimedia@gmail.com' AND role != 'admin';`,
+          query:
+            "UPDATE users SET role = 'admin' WHERE role = 'user' AND email = (SELECT email FROM users WHERE id = $1)",
+          params: [debugInfo?.user?.id],
         }),
       })
+
       const data = await response.json()
       setQueryResult(data)
+
       if (data.success) {
-        alert("Role updated successfully! Please refresh the page and run tests again.")
+        // Refresh debug info
+        await fetchDebugInfo()
       }
-    } catch (error) {
+    } catch (err) {
+      console.error("Role fix error:", err)
       setQueryResult({
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: err instanceof Error ? err.message : "Role fix failed",
       })
+    } finally {
+      setQueryLoading(false)
     }
   }
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "success":
-        return <CheckCircle className="h-4 w-4 text-green-500" />
-      case "error":
-        return <XCircle className="h-4 w-4 text-red-500" />
-      case "pending":
-        return <Clock className="h-4 w-4 text-yellow-500" />
-      default:
-        return <Clock className="h-4 w-4 text-gray-500" />
-    }
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }))
   }
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "success":
-        return (
-          <Badge variant="default" className="bg-green-500">
-            Test passed
-          </Badge>
-        )
-      case "error":
-        return <Badge variant="destructive">FAIL</Badge>
-      case "pending":
-        return <Badge variant="secondary">Running...</Badge>
-      default:
-        return <Badge variant="outline">Pending</Badge>
-    }
+  useEffect(() => {
+    fetchDebugInfo()
+  }, [])
+
+  const formatJson = (obj: any) => {
+    return JSON.stringify(obj, null, 2)
   }
 
-  if (!mounted) {
-    return <div className="p-6">Loading debug dashboard...</div>
+  const getStatusIcon = (success: boolean) => {
+    return success ? <CheckCircle className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto py-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">System Debug Dashboard</h1>
-          <p className="text-muted-foreground">
-            Comprehensive diagnostics for authentication, API endpoints, and database connectivity
-          </p>
+          <h1 className="text-3xl font-bold">Debug Dashboard</h1>
+          <p className="text-muted-foreground">System diagnostics and troubleshooting tools</p>
         </div>
-        <Button onClick={runAllTests} disabled={isRunning} size="lg">
-          {isRunning ? "Running Tests..." : "Run All Tests"}
+        <Button onClick={fetchDebugInfo} disabled={loading}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          Refresh
         </Button>
       </div>
 
+      {error && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="database">Database</TabsTrigger>
           <TabsTrigger value="session">Session</TabsTrigger>
-          <TabsTrigger value="details">Raw Data</TabsTrigger>
+          <TabsTrigger value="database">Database</TabsTrigger>
+          <TabsTrigger value="query">Custom Query</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5" />
-                System Test Results
-              </CardTitle>
-              <CardDescription>
-                Automated tests for authentication, API endpoints, and database connectivity
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {results.length === 0 && !isRunning && (
-                <Alert>
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>Click "Run All Tests" to start system diagnostics</AlertDescription>
-                </Alert>
-              )}
-
-              {results.map((result) => (
-                <div key={result.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    {getStatusIcon(result.status)}
-                    <div>
-                      <h3 className="font-medium">{result.name}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(result.timestamp).toLocaleTimeString()}
-                        {result.duration && ` • ${result.duration}ms`}
-                      </p>
+          {debugInfo && (
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">User Status</CardTitle>
+                  <User className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center space-x-2">
+                    {getStatusIcon(!!debugInfo.user)}
+                    <span className="text-2xl font-bold">{debugInfo.user ? "Authenticated" : "Not Authenticated"}</span>
+                  </div>
+                  {debugInfo.user && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs text-muted-foreground">Role: {debugInfo.user.role}</p>
+                      <p className="text-xs text-muted-foreground">Email: {debugInfo.user.email}</p>
                     </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Database</CardTitle>
+                  <Database className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center space-x-2">
+                    {getStatusIcon(!debugInfo.database.error)}
+                    <span className="text-2xl font-bold">{debugInfo.database.error ? "Error" : "Connected"}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {getStatusBadge(result.status)}
-                    {result.error && (
-                      <Badge variant="outline" className="text-red-600">
-                        {result.error}
-                      </Badge>
-                    )}
+                  {debugInfo.database.queries && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {debugInfo.database.queries.filter((q: any) => q.success).length} /{" "}
+                      {debugInfo.database.queries.length} queries successful
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Session</CardTitle>
+                  <Settings className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center space-x-2">
+                    {getStatusIcon(!!debugInfo.session.cookies?.session)}
+                    <span className="text-2xl font-bold">
+                      {debugInfo.session.cookies?.session ? "Active" : "No Session"}
+                    </span>
                   </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Cookies: {Object.keys(debugInfo.session.cookies || {}).length}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {debugInfo?.user?.role !== "admin" && debugInfo?.user?.role !== "super_admin" && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="flex items-center justify-between">
+                <span>Your role is "{debugInfo?.user?.role}" but admin access is required for plan management.</span>
+                <Button size="sm" onClick={fixUserRole} disabled={queryLoading}>
+                  Fix My Role
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+        </TabsContent>
+
+        <TabsContent value="session" className="space-y-4">
+          {debugInfo?.session && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Session Information</CardTitle>
+                  <CardDescription>Current session and authentication details</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-medium">User</Label>
+                    <pre className="mt-1 p-3 bg-muted rounded-md text-xs overflow-auto">
+                      {formatJson(debugInfo.session.user)}
+                    </pre>
+                  </div>
+
+                  <div>
+                    <Label className="text-sm font-medium">Cookies</Label>
+                    <pre className="mt-1 p-3 bg-muted rounded-md text-xs overflow-auto">
+                      {formatJson(debugInfo.session.cookies)}
+                    </pre>
+                  </div>
+
+                  <div>
+                    <Label className="text-sm font-medium">Headers</Label>
+                    <pre className="mt-1 p-3 bg-muted rounded-md text-xs overflow-auto">
+                      {formatJson(debugInfo.session.headers)}
+                    </pre>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="database" className="space-y-4">
+          {debugInfo?.database && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Database Status</CardTitle>
+                  <CardDescription>Connection status and query results</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {debugInfo.database.error ? (
+                    <Alert variant="destructive">
+                      <XCircle className="h-4 w-4" />
+                      <AlertDescription>{debugInfo.database.error}</AlertDescription>
+                    </Alert>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center space-x-2">
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                        <span>Database connected successfully</span>
+                      </div>
+
+                      {debugInfo.database.queries && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Query Results</Label>
+                          {debugInfo.database.queries.map((query: any, index: number) => (
+                            <Collapsible key={index}>
+                              <CollapsibleTrigger asChild>
+                                <Button variant="outline" className="w-full justify-between bg-transparent">
+                                  <div className="flex items-center space-x-2">
+                                    {getStatusIcon(query.success)}
+                                    <span className="font-mono text-xs">{query.query}</span>
+                                  </div>
+                                  <ChevronDown className="h-4 w-4" />
+                                </Button>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <div className="mt-2 p-3 bg-muted rounded-md">
+                                  <pre className="text-xs overflow-auto">{formatJson(query.result || query.error)}</pre>
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="query" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Database className="h-5 w-5" />
-                Database Query Tool
-              </CardTitle>
-              <CardDescription>Execute SQL queries safely (SELECT, SHOW, DESCRIBE only)</CardDescription>
+              <CardTitle>Custom Query Executor</CardTitle>
+              <CardDescription>Execute custom database queries (SELECT only)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">SQL Query</label>
+                <Label htmlFor="query">SQL Query</Label>
                 <Textarea
+                  id="query"
+                  placeholder="SELECT * FROM users LIMIT 10;"
                   value={customQuery}
                   onChange={(e) => setCustomQuery(e.target.value)}
-                  placeholder="Enter your SQL query here..."
                   rows={4}
                 />
               </div>
 
-              <div className="flex gap-2">
-                <Button onClick={executeCustomQuery}>Execute Query</Button>
-                <Button onClick={fixUserRole} variant="outline">
-                  Fix My Role (Set to Admin)
+              <div className="flex space-x-2">
+                <Button onClick={executeCustomQuery} disabled={queryLoading || !customQuery.trim()}>
+                  <Play className={`mr-2 h-4 w-4 ${queryLoading ? "animate-spin" : ""}`} />
+                  Execute Query
+                </Button>
+                <Button variant="outline" onClick={() => setCustomQuery("")}>
+                  Clear
                 </Button>
               </div>
 
               {queryResult && (
-                <div className="mt-4">
-                  <h4 className="font-medium mb-2">Query Result:</h4>
-                  <pre className="bg-muted p-4 rounded-lg text-sm overflow-auto max-h-96">
-                    {JSON.stringify(queryResult, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="session" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Session Information
-              </CardTitle>
-              <CardDescription>Current user session and authentication status</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {results.find((r) => r.id === "session")?.data && (
-                <pre className="bg-muted p-4 rounded-lg text-sm overflow-auto">
-                  {JSON.stringify(results.find((r) => r.id === "session")?.data, null, 2)}
-                </pre>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Cookie className="h-5 w-5" />
-                Browser Cookies
-              </CardTitle>
-              <CardDescription>Current browser cookies and session data</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {results.find((r) => r.id === "cookies")?.data && (
-                <pre className="bg-muted p-4 rounded-lg text-sm overflow-auto">
-                  {JSON.stringify(results.find((r) => r.id === "cookies")?.data, null, 2)}
-                </pre>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="details" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Detailed Results</CardTitle>
-              <CardDescription>Raw response data from all tests</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {results.map((result) => (
-                <div key={result.id} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium">{result.name}</h3>
-                    <div className="flex items-center gap-2">
-                      {result.duration && <Badge variant="outline">{result.duration}ms</Badge>}
-                      <Badge variant="outline">{new Date(result.timestamp).toLocaleTimeString()}</Badge>
-                      {getStatusBadge(result.status)}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Query Result</Label>
+                  <div className="p-3 bg-muted rounded-md">
+                    <div className="flex items-center space-x-2 mb-2">
+                      {getStatusIcon(queryResult.success)}
+                      <Badge variant={queryResult.success ? "default" : "destructive"}>
+                        {queryResult.success ? "Success" : "Error"}
+                      </Badge>
                     </div>
+                    <pre className="text-xs overflow-auto max-h-96">{formatJson(queryResult)}</pre>
                   </div>
-
-                  {result.error && (
-                    <Alert variant="destructive">
-                      <AlertTriangle className="h-4 w-4" />
-                      <AlertDescription>{result.error}</AlertDescription>
-                    </Alert>
-                  )}
-
-                  {result.data && (
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">Response Data:</h4>
-                      <pre className="bg-muted p-4 rounded-lg text-sm overflow-auto max-h-96">
-                        {JSON.stringify(result.data, null, 2)}
-                      </pre>
-                    </div>
-                  )}
                 </div>
-              ))}
+              )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
-
-      <footer className="text-center text-sm text-muted-foreground border-t pt-4">
-        <p>© 2024 Digital Signage Platform</p>
-        <p>Version 1.0.0 • System Status: Operational</p>
-      </footer>
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { cookies } from "next/headers"
 import type { NextRequest } from "next/server"
 import bcrypt from "bcryptjs"
 import crypto from "crypto"
-import jwt from "jsonwebtoken" // Added import for jwt
+import jwt from "jsonwebtoken"
 import { userQueries, sessionQueries, auditQueries } from "./database"
 
 if (!process.env.JWT_SECRET) {
@@ -28,6 +28,9 @@ export interface User {
   business_address?: string
   phone?: string
   avatar_url?: string
+  is_active?: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 export interface AuthResult {
@@ -78,7 +81,7 @@ export const tokenUtils = {
   },
 
   generateJWT: (payload: any): string => {
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" }) // Updated to use jwt.sign instead of generateToken
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" })
   },
 
   verifyJWT: (token: string): any => {
@@ -212,7 +215,6 @@ export const authService = {
     try {
       const user = await userQueries.findByEmail(email)
       if (!user) {
-        // Return success even if user doesn't exist for security
         return { success: true, message: "If an account exists, a reset link has been sent." }
       }
 
@@ -258,7 +260,6 @@ export const authService = {
   },
 }
 
-// Additional required exports
 export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
   return await passwordUtils.verify(password, hash)
 }

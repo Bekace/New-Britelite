@@ -1,60 +1,61 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { authService } from "@/lib/auth"
+import { getCurrentUserFromRequest } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("Debug Session API: GET request received")
+    const debugInfo = {
+      timestamp: new Date().toISOString(),
+      cookies: {},
+      headers: {},
+      user: null,
+      session: null,
+    }
 
-    const cookieStore = await cookies()
-    const sessionToken = cookieStore.get("session")?.value
-    const allCookies = cookieStore.getAll()
-
-    console.log("Debug Session API: Session token exists:", !!sessionToken)
-    console.log("Debug Session API: All cookies count:", allCookies.length)
-
-    if (!sessionToken) {
-      console.log("Debug Session API: No session token found")
-      return NextResponse.json({
-        success: false,
-        error: "No session token found",
-        cookies: allCookies.map((c) => ({ name: c.name, hasValue: !!c.value })),
-        sessionToken: null,
+    // Get all cookies
+    const cookieHeader = request.headers.get("cookie")
+    if (cookieHeader) {
+      cookieHeader.split(";").forEach((cookie) => {
+        const [name, value] = cookie.trim().split("=")
+        debugInfo.cookies[name] = value
       })
     }
 
-    console.log("Debug Session API: Verifying session...")
-    const user = await authService.verifySession(sessionToken)
+    // Get relevant headers
+    debugInfo.headers = {
+      "user-agent": request.headers.get("user-agent"),
+      authorization: request.headers.get("authorization"),
+      cookie: request.headers.get("cookie"),
+      "x-forwarded-for": request.headers.get("x-forwarded-for"),
+      "x-real-ip": request.headers.get("x-real-ip"),
+    }
 
-    console.log("Debug Session API: User verification result:", {
-      userExists: !!user,
-      userRole: user?.role,
-      userId: user?.id,
-      userEmail: user?.email,
-    })
-
-    return NextResponse.json({
-      success: true,
-      sessionToken: sessionToken.substring(0, 20) + "...",
-      user: user
+    // Try to get current user
+    try {
+      const user = await getCurrentUserFromRequest(request)
+      debugInfo.user = user
         ? {
             id: user.id,
             email: user.email,
             role: user.role,
-            first_name: user.first_name,
-            last_name: user.last_name,
             is_email_verified: user.is_email_verified,
           }
-        : null,
-      cookies: allCookies.map((c) => ({ name: c.name, hasValue: !!c.value })),
-      timestamp: new Date().toISOString(),
+        : null
+    } catch (error) {
+      debugInfo.session = {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      debug: debugInfo,
     })
   } catch (error) {
-    console.error("Debug Session API: Error:", error)
+    console.error("Session debug error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Session debug failed",
+        error: "Debug failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },

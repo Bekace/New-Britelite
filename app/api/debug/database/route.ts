@@ -1,70 +1,128 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { authService } from "@/lib/auth"
-import { sql } from "@/lib/database"
+import { getCurrentUserFromRequest } from "@/lib/auth"
+import { executeQuery } from "@/lib/database"
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    console.log("Debug Database API: POST request received")
+    const user = await getCurrentUserFromRequest(request)
 
-    const cookieStore = await cookies()
-    const sessionToken = cookieStore.get("session")?.value
-
-    console.log("Debug Database API: Session token exists:", !!sessionToken)
-
-    if (!sessionToken) {
-      console.log("Debug Database API: No session token found")
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
-    }
-
-    const user = await authService.verifySession(sessionToken)
-    console.log("Debug Database API: User verification result:", {
-      userExists: !!user,
-      userRole: user?.role,
-      userId: user?.id,
-      userEmail: user?.email,
-    })
-
-    if (!user) {
-      console.log("Debug Database API: Session verification failed")
-      return NextResponse.json({ success: false, error: "Invalid session" }, { status: 401 })
-    }
-
-    if (user.role !== "admin" && user.role !== "super_admin") {
-      console.log("Debug Database API: Access denied for role:", user.role)
+    if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
       return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
     }
 
-    const body = await request.json()
-    const { query } = body
-
-    if (!query || typeof query !== "string") {
-      return NextResponse.json({ success: false, error: "Query is required" }, { status: 400 })
+    const debugInfo = {
+      timestamp: new Date().toISOString(),
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      },
+      database: {
+        connected: true,
+        queries: [],
+      },
     }
 
-    console.log("Debug Database API: Executing query:", query.substring(0, 100) + "...")
+    // Test basic queries
+    try {
+      const usersCount = await executeQuery("SELECT COUNT(*) as count FROM users")
+      debugInfo.database.queries.push({
+        query: "SELECT COUNT(*) as count FROM users",
+        result: usersCount,
+        success: true,
+      })
+    } catch (error) {
+      debugInfo.database.queries.push({
+        query: "SELECT COUNT(*) as count FROM users",
+        error: error instanceof Error ? error.message : "Unknown error",
+        success: false,
+      })
+    }
 
-    // Execute the query
-    const result = await sql.unsafe(query)
+    try {
+      const plansCount = await executeQuery("SELECT COUNT(*) as count FROM plans")
+      debugInfo.database.queries.push({
+        query: "SELECT COUNT(*) as count FROM plans",
+        result: plansCount,
+        success: true,
+      })
+    } catch (error) {
+      debugInfo.database.queries.push({
+        query: "SELECT COUNT(*) as count FROM plans",
+        error: error instanceof Error ? error.message : "Unknown error",
+        success: false,
+      })
+    }
 
-    console.log("Debug Database API: Query executed successfully, rows:", result.length)
+    try {
+      const sessionsCount = await executeQuery("SELECT COUNT(*) as count FROM sessions")
+      debugInfo.database.queries.push({
+        query: "SELECT COUNT(*) as count FROM sessions",
+        result: sessionsCount,
+        success: true,
+      })
+    } catch (error) {
+      debugInfo.database.queries.push({
+        query: "SELECT COUNT(*) as count FROM sessions",
+        error: error instanceof Error ? error.message : "Unknown error",
+        success: false,
+      })
+    }
 
     return NextResponse.json({
       success: true,
-      data: {
-        rows: result,
-        sql: query,
-      },
-      query: query,
-      executedAt: new Date().toISOString(),
-      executedBy: user.email,
+      debug: debugInfo,
     })
   } catch (error) {
-    console.error("Debug Database API: Error:", error)
+    console.error("Database debug error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Database query failed",
+        error: "Debug failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const user = await getCurrentUserFromRequest(request)
+
+    if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
+      return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
+    }
+
+    const { query, params = [] } = await request.json()
+
+    if (!query) {
+      return NextResponse.json({ success: false, error: "Query is required" }, { status: 400 })
+    }
+
+    // Only allow safe queries (SELECT, UPDATE for specific operations)
+    const safeQuery = query.trim().toLowerCase()
+    if (!safeQuery.startsWith("select") && !safeQuery.startsWith("update users set role")) {
+      return NextResponse.json(
+        { success: false, error: "Only SELECT queries and role updates are allowed" },
+        { status: 400 },
+      )
+    }
+
+    const result = await executeQuery(query, params)
+
+    return NextResponse.json({
+      success: true,
+      result: result,
+      query: query,
+      params: params,
+    })
+  } catch (error) {
+    console.error("Database query error:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Query failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },

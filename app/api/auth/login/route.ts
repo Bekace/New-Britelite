@@ -1,86 +1,39 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { userQueries, sessionQueries, auditQueries } from "@/lib/database"
-import bcrypt from "bcryptjs"
-import crypto from "crypto"
+import { authService } from "@/lib/auth"
 
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json()
 
     if (!email || !password) {
-      return NextResponse.json({ error: "Email and password are required" }, { status: 400 })
+      return NextResponse.json({ success: false, error: "Email and password are required" }, { status: 400 })
     }
 
-    // Find user by email
-    const user = await userQueries.findByEmail(email.toLowerCase())
-    if (!user) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
+    const result = await authService.login(email, password)
+
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 401 })
     }
 
-    // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password_hash)
-    if (!isValidPassword) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
-    }
-
-    // Check if email is verified
-    if (!user.is_email_verified) {
-      return NextResponse.json(
-        {
-          error: "Please verify your email before logging in",
-          requiresVerification: true,
-        },
-        { status: 401 },
-      )
-    }
-
-    // Generate session token
-    const sessionToken = crypto.randomBytes(32).toString("hex")
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-
-    // Create session
-    await sessionQueries.create(user.id, sessionToken, expiresAt)
-
-    // Log the login
-    await auditQueries.log({
-      user_id: user.id,
-      action: "user_login",
-      details: { email: user.email },
-      ip_address: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown",
-      user_agent: request.headers.get("user-agent") || "unknown",
-    })
-
-    // Get user with plan info
-    const userWithPlan = await userQueries.findById(user.id)
-
-    // Create response
     const response = NextResponse.json({
       success: true,
-      message: "Login successful",
-      user: {
-        id: userWithPlan.id,
-        email: userWithPlan.email,
-        firstName: userWithPlan.first_name,
-        lastName: userWithPlan.last_name,
-        role: userWithPlan.role,
-        isEmailVerified: userWithPlan.is_email_verified,
-        planName: userWithPlan.plan_name,
-        businessName: userWithPlan.business_name,
-      },
+      user: result.user,
+      message: result.message,
     })
 
-    // Set HTTP-only cookie
-    response.cookies.set("session", sessionToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: "/",
-    })
+    if (result.token) {
+      response.cookies.set("session", result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60, // 7 days
+        path: "/",
+      })
+    }
 
     return response
   } catch (error) {
-    console.error("Login error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Login API error:", error)
+    return NextResponse.json({ success: false, error: "Login failed" }, { status: 500 })
   }
 }
