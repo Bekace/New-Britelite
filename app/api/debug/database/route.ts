@@ -5,52 +5,59 @@ import { sql } from "@/lib/database"
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("Database Debug API: POST request received")
+    console.log("Debug Database API: POST request received")
 
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
 
+    console.log("Debug Database API: Session token exists:", !!sessionToken)
+
     if (!sessionToken) {
-      console.log("Database Debug API: No session token found")
+      console.log("Debug Database API: No session token found")
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
     }
 
     const user = await authService.verifySession(sessionToken)
-    console.log("Database Debug API: User verification result:", {
+    console.log("Debug Database API: User verification result:", {
       userExists: !!user,
       userRole: user?.role,
+      userId: user?.id,
     })
 
-    if (!user || (user.role !== "super_admin" && user.role !== "admin")) {
-      console.log("Database Debug API: Access denied for role:", user?.role)
+    if (!user) {
+      console.log("Debug Database API: Session verification failed")
+      return NextResponse.json({ success: false, error: "Invalid session" }, { status: 401 })
+    }
+
+    if (user.role !== "admin" && user.role !== "super_admin") {
+      console.log("Debug Database API: Access denied for role:", user.role)
       return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
     }
 
     const body = await request.json()
     const { query } = body
 
-    if (!query) {
+    if (!query || typeof query !== "string") {
       return NextResponse.json({ success: false, error: "Query is required" }, { status: 400 })
     }
 
-    console.log("Database Debug API: Executing query:", query)
+    console.log("Debug Database API: Executing query:", query)
 
-    // Execute the query
+    // Execute the query safely
     const result = await sql.unsafe(query)
 
-    console.log("Database Debug API: Query executed successfully, rows:", result.length)
+    console.log("Debug Database API: Query executed successfully, rows:", result.length)
 
     return NextResponse.json({
       success: true,
-      data: {
-        query: query,
-        rowCount: result.length,
-        results: result,
-        executedAt: new Date().toISOString(),
-      },
+      data: result,
+      rowCount: result.length,
+      query: query,
+      executedBy: user.email,
+      timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("Database Debug API: Error executing query:", error)
+    console.error("Debug Database API: Error:", error)
     return NextResponse.json(
       {
         success: false,

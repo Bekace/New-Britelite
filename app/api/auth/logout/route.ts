@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     console.log("Logout API: Session token exists:", !!sessionToken)
 
     if (sessionToken) {
-      // Delete session from database
+      // Delete the session from database
       await authService.logout(sessionToken)
       console.log("Logout API: Session deleted from database")
     }

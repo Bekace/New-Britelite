@@ -5,30 +5,28 @@ import { sql } from "@/lib/database"
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    console.log("Plan Detail API: GET request received for ID:", params.id)
+    console.log("Plans [id] API: GET request received for ID:", params.id)
 
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
 
     if (!sessionToken) {
-      console.log("Plan Detail API: No session token found")
+      console.log("Plans [id] API: No session token found")
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
     }
 
     const user = await authService.verifySession(sessionToken)
-    console.log("Plan Detail API: User verification result:", {
+    console.log("Plans [id] API: User verification result:", {
       userExists: !!user,
       userRole: user?.role,
     })
 
     if (!user || user.role !== "super_admin") {
-      console.log("Plan Detail API: Access denied for role:", user?.role)
+      console.log("Plans [id] API: Access denied for role:", user?.role)
       return NextResponse.json({ success: false, error: "Super admin access required" }, { status: 403 })
     }
 
-    console.log("Plan Detail API: Fetching plan from database")
-
-    const plans = await sql`
+    const plan = await sql`
       SELECT 
         p.*,
         COUNT(u.id) as user_count
@@ -38,19 +36,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       GROUP BY p.id
     `
 
-    if (plans.length === 0) {
-      console.log("Plan Detail API: Plan not found")
+    if (plan.length === 0) {
       return NextResponse.json({ success: false, error: "Plan not found" }, { status: 404 })
     }
 
-    console.log("Plan Detail API: Plan found:", plans[0])
-
     return NextResponse.json({
       success: true,
-      plan: plans[0],
+      plan: plan[0],
     })
   } catch (error) {
-    console.error("Plan Detail API: Error in GET handler:", error)
+    console.error("Plans [id] API: Error in GET handler:", error)
     return NextResponse.json(
       {
         success: false,
@@ -64,44 +59,43 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    console.log("Plan Update API: PUT request received for ID:", params.id)
+    console.log("Plans [id] API: PUT request received for ID:", params.id)
 
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
 
     if (!sessionToken) {
-      console.log("Plan Update API: No session token found")
+      console.log("Plans [id] API: No session token found")
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
     }
 
     const user = await authService.verifySession(sessionToken)
-    console.log("Plan Update API: User verification result:", {
+    console.log("Plans [id] API: User verification result:", {
       userExists: !!user,
       userRole: user?.role,
     })
 
     if (!user || user.role !== "super_admin") {
-      console.log("Plan Update API: Access denied for role:", user?.role)
+      console.log("Plans [id] API: Access denied for role:", user?.role)
       return NextResponse.json({ success: false, error: "Super admin access required" }, { status: 403 })
     }
 
     const body = await request.json()
-    console.log("Plan Update API: Request body:", body)
+    console.log("Plans [id] API: Request body:", body)
 
     const { name, description, price, billing_cycle, max_screens, max_storage_gb, max_playlists, is_active } = body
 
     // Validate required fields
     if (!name || price === undefined) {
-      console.log("Plan Update API: Missing required fields")
+      console.log("Plans [id] API: Missing required fields")
       return NextResponse.json({ success: false, error: "Name and price are required" }, { status: 400 })
     }
 
-    console.log("Plan Update API: Updating plan in database")
+    console.log("Plans [id] API: Updating plan")
 
     // Update plan
     const result = await sql`
-      UPDATE plans 
-      SET 
+      UPDATE plans SET
         name = ${name},
         description = ${description || null},
         price = ${price},
@@ -116,11 +110,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     `
 
     if (result.length === 0) {
-      console.log("Plan Update API: Plan not found")
       return NextResponse.json({ success: false, error: "Plan not found" }, { status: 404 })
     }
 
-    console.log("Plan Update API: Plan updated successfully:", result[0])
+    console.log("Plans [id] API: Plan updated successfully:", result[0])
 
     return NextResponse.json({
       success: true,
@@ -128,7 +121,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       plan: result[0],
     })
   } catch (error) {
-    console.error("Plan Update API: Error in PUT handler:", error)
+    console.error("Plans [id] API: Error in PUT handler:", error)
     return NextResponse.json(
       {
         success: false,
@@ -142,70 +135,55 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    console.log("Plan Delete API: DELETE request received for ID:", params.id)
+    console.log("Plans [id] API: DELETE request received for ID:", params.id)
 
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
 
     if (!sessionToken) {
-      console.log("Plan Delete API: No session token found")
+      console.log("Plans [id] API: No session token found")
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
     }
 
     const user = await authService.verifySession(sessionToken)
-    console.log("Plan Delete API: User verification result:", {
+    console.log("Plans [id] API: User verification result:", {
       userExists: !!user,
       userRole: user?.role,
     })
 
     if (!user || user.role !== "super_admin") {
-      console.log("Plan Delete API: Access denied for role:", user?.role)
+      console.log("Plans [id] API: Access denied for role:", user?.role)
       return NextResponse.json({ success: false, error: "Super admin access required" }, { status: 403 })
     }
 
-    console.log("Plan Delete API: Checking if plan has users")
-
     // Check if plan has active users
     const usersWithPlan = await sql`
-      SELECT COUNT(*) as user_count
-      FROM users 
-      WHERE plan_id = ${params.id} AND is_active = true
+      SELECT COUNT(*) as count FROM users WHERE plan_id = ${params.id} AND is_active = true
     `
 
-    if (usersWithPlan[0].user_count > 0) {
-      console.log("Plan Delete API: Plan has active users, cannot delete")
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Cannot delete plan with ${usersWithPlan[0].user_count} active users`,
-        },
-        { status: 400 },
-      )
+    if (usersWithPlan[0].count > 0) {
+      return NextResponse.json({ success: false, error: "Cannot delete plan with active users" }, { status: 400 })
     }
 
-    console.log("Plan Delete API: Deleting plan from database")
+    console.log("Plans [id] API: Deleting plan")
 
     // Delete plan
     const result = await sql`
-      DELETE FROM plans 
-      WHERE id = ${params.id}
-      RETURNING *
+      DELETE FROM plans WHERE id = ${params.id} RETURNING *
     `
 
     if (result.length === 0) {
-      console.log("Plan Delete API: Plan not found")
       return NextResponse.json({ success: false, error: "Plan not found" }, { status: 404 })
     }
 
-    console.log("Plan Delete API: Plan deleted successfully:", result[0])
+    console.log("Plans [id] API: Plan deleted successfully")
 
     return NextResponse.json({
       success: true,
       message: "Plan deleted successfully",
-      plan: result[0],
     })
   } catch (error) {
-    console.error("Plan Delete API: Error in DELETE handler:", error)
+    console.error("Plans [id] API: Error in DELETE handler:", error)
     return NextResponse.json(
       {
         success: false,

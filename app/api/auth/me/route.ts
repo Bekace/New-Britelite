@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const sessionToken = cookieStore.get("session")?.value
 
     console.log("Auth Me API: Session token exists:", !!sessionToken)
+    console.log("Auth Me API: Session token preview:", sessionToken ? sessionToken.substring(0, 20) + "..." : "null")
 
     if (!sessionToken) {
       console.log("Auth Me API: No session token found")
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid session" }, { status: 401 })
     }
 
-    console.log("Auth Me API: Returning user data successfully")
+    console.log("Auth Me API: Returning user data")
 
     return NextResponse.json({
       success: true,
@@ -52,11 +53,11 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error("Auth Me API: Error in GET handler:", error)
+    console.error("Auth Me API: Error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Internal server error",
+        error: "Authentication check failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },

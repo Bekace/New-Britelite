@@ -5,72 +5,102 @@ import { sessionQueries } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("Session Debug API: GET request received")
+    console.log("Debug Session API: GET request received")
 
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
 
-    console.log("Session Debug API: Session token exists:", !!sessionToken)
-    console.log("Session Debug API: Session token length:", sessionToken?.length || 0)
+    console.log("Debug Session API: Session token exists:", !!sessionToken)
+    console.log(
+      "Debug Session API: Session token preview:",
+      sessionToken ? sessionToken.substring(0, 20) + "..." : "null",
+    )
+
+    const debugInfo: any = {
+      hasSessionToken: !!sessionToken,
+      sessionTokenPreview: sessionToken ? sessionToken.substring(0, 20) + "..." : null,
+      cookies: {},
+      headers: {},
+      timestamp: new Date().toISOString(),
+    }
+
+    // Get all cookies
+    const allCookies = cookieStore.getAll()
+    debugInfo.cookies = allCookies.reduce((acc: any, cookie) => {
+      acc[cookie.name] = cookie.value.substring(0, 20) + "..."
+      return acc
+    }, {})
+
+    // Get relevant headers
+    debugInfo.headers = {
+      userAgent: request.headers.get("user-agent"),
+      referer: request.headers.get("referer"),
+      origin: request.headers.get("origin"),
+      host: request.headers.get("host"),
+    }
 
     if (!sessionToken) {
+      console.log("Debug Session API: No session token found")
       return NextResponse.json({
-        success: false,
-        error: "No session token found",
-        cookies: Object.fromEntries(Array.from(cookieStore.getAll()).map((cookie) => [cookie.name, cookie.value])),
-        headers: Object.fromEntries(request.headers.entries()),
+        success: true,
+        authenticated: false,
+        user: null,
+        session: null,
+        debug: debugInfo,
       })
     }
 
-    // Get session from database
-    const session = await sessionQueries.findByToken(sessionToken)
-    console.log("Session Debug API: Database session found:", !!session)
-
-    if (!session) {
-      return NextResponse.json({
-        success: false,
-        error: "Session not found in database",
-        sessionToken: sessionToken.substring(0, 10) + "...",
-        cookies: Object.fromEntries(Array.from(cookieStore.getAll()).map((cookie) => [cookie.name, cookie.value])),
-      })
-    }
-
-    // Verify session through auth service
+    // Verify session
     const user = await authService.verifySession(sessionToken)
-    console.log("Session Debug API: Auth service verification:", !!user)
+    console.log("Debug Session API: User verification result:", {
+      userExists: !!user,
+      userRole: user?.role,
+      userId: user?.id,
+      userEmail: user?.email,
+    })
+
+    // Get raw session data
+    let rawSession = null
+    try {
+      rawSession = await sessionQueries.findByToken(sessionToken)
+      console.log("Debug Session API: Raw session found:", !!rawSession)
+    } catch (error) {
+      console.error("Debug Session API: Error fetching raw session:", error)
+    }
+
+    debugInfo.sessionVerification = {
+      userFound: !!user,
+      rawSessionFound: !!rawSession,
+      userRole: user?.role,
+      userEmail: user?.email,
+      sessionExpiry: rawSession?.expires_at,
+    }
 
     return NextResponse.json({
       success: true,
-      data: {
-        sessionToken: sessionToken.substring(0, 10) + "...",
-        sessionExists: !!session,
-        userVerified: !!user,
-        sessionData: {
-          userId: session.user_id,
-          email: session.email,
-          role: session.role,
-          planName: session.plan_name,
-          isEmailVerified: session.is_email_verified,
-        },
-        userData: user
-          ? {
-              id: user.id,
-              email: user.email,
-              role: user.role,
-              planName: user.plan_name,
-            }
-          : null,
-        cookies: Object.fromEntries(Array.from(cookieStore.getAll()).map((cookie) => [cookie.name, cookie.value])),
-        headers: {
-          userAgent: request.headers.get("user-agent"),
-          origin: request.headers.get("origin"),
-          referer: request.headers.get("referer"),
-          host: request.headers.get("host"),
-        },
-      },
+      authenticated: !!user,
+      user: user
+        ? {
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            is_email_verified: user.is_email_verified,
+          }
+        : null,
+      session: rawSession
+        ? {
+            id: rawSession.id,
+            user_id: rawSession.user_id,
+            expires_at: rawSession.expires_at,
+            created_at: rawSession.created_at,
+          }
+        : null,
+      debug: debugInfo,
     })
   } catch (error) {
-    console.error("Session Debug API: Error:", error)
+    console.error("Debug Session API: Error:", error)
     return NextResponse.json(
       {
         success: false,
