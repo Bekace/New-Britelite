@@ -4,30 +4,101 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required")
 }
 
-export const sql = neon(process.env.DATABASE_URL)
+const sql = neon(process.env.DATABASE_URL)
 
-// User queries
+export interface User {
+  id: string
+  email: string
+  password_hash: string
+  first_name: string
+  last_name: string
+  role: "user" | "admin" | "super_admin"
+  is_email_verified: boolean
+  email_verification_token?: string
+  password_reset_token?: string
+  password_reset_expires?: Date
+  plan_id?: string
+  plan_name?: string
+  max_screens?: number
+  max_storage_gb?: number
+  max_playlists?: number
+  business_name?: string
+  business_address?: string
+  phone?: string
+  avatar_url?: string
+  created_at: Date
+  updated_at: Date
+}
+
+export interface Session {
+  id: string
+  user_id: string
+  token: string
+  expires_at: Date
+  created_at: Date
+}
+
+export interface Plan {
+  id: string
+  name: string
+  description?: string
+  price_monthly: number
+  price_yearly: number
+  max_screens: number
+  max_storage_gb: number
+  max_playlists: number
+  features: string[]
+  is_active: boolean
+  created_at: Date
+  updated_at: Date
+}
+
+export interface Feature {
+  id: string
+  name: string
+  description?: string
+  is_active: boolean
+  created_at: Date
+  updated_at: Date
+}
+
+export interface PlanFeature {
+  plan_id: string
+  feature_id: string
+  created_at: Date
+}
+
+export interface AuditLog {
+  id: string
+  user_id?: string
+  action: string
+  details: Record<string, any>
+  ip_address?: string
+  user_agent?: string
+  created_at: Date
+}
+
 export const userQueries = {
-  findByEmail: async (email: string) => {
-    const users = await sql`
+  findByEmail: async (email: string): Promise<User | null> => {
+    const result = await sql`
       SELECT u.*, p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
       FROM users u
       LEFT JOIN plans p ON u.plan_id = p.id
       WHERE u.email = ${email}
       LIMIT 1
     `
-    return users[0] || null
+    return result[0] || null
   },
 
-  findById: async (id: string) => {
-    const users = await sql`
+  findById: async (id: string): Promise<User | null> => {
+    const result = await sql`
       SELECT u.*, p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
       FROM users u
       LEFT JOIN plans p ON u.plan_id = p.id
       WHERE u.id = ${id}
       LIMIT 1
     `
-    return users[0] || null
+    return result[0] || null
   },
 
   create: async (userData: {
@@ -37,260 +108,304 @@ export const userQueries = {
     last_name: string
     business_name?: string
     email_verification_token: string
-  }) => {
-    const users = await sql`
-      INSERT INTO users (
-        email, password_hash, first_name, last_name, business_name, 
-        email_verification_token, role, is_active, is_email_verified
-      )
-      VALUES (
-        ${userData.email}, ${userData.password_hash}, ${userData.first_name}, 
-        ${userData.last_name}, ${userData.business_name || null}, 
-        ${userData.email_verification_token}, 'user', true, false
-      )
+  }): Promise<User> => {
+    const result = await sql`
+      INSERT INTO users (email, password_hash, first_name, last_name, business_name, email_verification_token)
+      VALUES (${userData.email}, ${userData.password_hash}, ${userData.first_name}, ${userData.last_name}, ${userData.business_name || null}, ${userData.email_verification_token})
       RETURNING *
     `
-    return users[0]
+    return result[0]
   },
 
-  updateEmailVerification: async (token: string) => {
-    const users = await sql`
+  updateEmailVerification: async (token: string): Promise<User | null> => {
+    const result = await sql`
       UPDATE users 
-      SET is_email_verified = true, email_verification_token = null, updated_at = NOW()
+      SET is_email_verified = true, email_verification_token = NULL, updated_at = NOW()
       WHERE email_verification_token = ${token}
       RETURNING *
     `
-    return users[0] || null
+    return result[0] || null
   },
 
-  setPasswordResetToken: async (email: string, token: string, expiresAt: Date) => {
-    const users = await sql`
+  setPasswordResetToken: async (email: string, token: string, expiresAt: Date): Promise<void> => {
+    await sql`
       UPDATE users 
-      SET password_reset_token = ${token}, password_reset_expires = ${expiresAt.toISOString()}, updated_at = NOW()
+      SET password_reset_token = ${token}, password_reset_expires = ${expiresAt}, updated_at = NOW()
       WHERE email = ${email}
-      RETURNING *
     `
-    return users[0] || null
   },
 
-  resetPassword: async (token: string, newPasswordHash: string) => {
-    const users = await sql`
+  resetPassword: async (token: string, passwordHash: string): Promise<User | null> => {
+    const result = await sql`
       UPDATE users 
-      SET password_hash = ${newPasswordHash}, password_reset_token = null, 
-          password_reset_expires = null, updated_at = NOW()
-      WHERE password_reset_token = ${token} 
-        AND password_reset_expires > NOW()
+      SET password_hash = ${passwordHash}, password_reset_token = NULL, password_reset_expires = NULL, updated_at = NOW()
+      WHERE password_reset_token = ${token} AND password_reset_expires > NOW()
       RETURNING *
     `
-    return users[0] || null
+    return result[0] || null
   },
 
-  updateProfile: async (
-    userId: string,
-    updates: {
-      first_name?: string
-      last_name?: string
-      business_name?: string
-      business_address?: string
-      phone?: string
-      avatar_url?: string
-    },
-  ) => {
-    const setClause = Object.entries(updates)
-      .filter(([_, value]) => value !== undefined)
-      .map(([key, _]) => `${key} = $${key}`)
+  updateProfile: async (userId: string, updates: Partial<User>): Promise<User | null> => {
+    const setClause = Object.keys(updates)
+      .map((key) => `${key} = $${Object.keys(updates).indexOf(key) + 2}`)
       .join(", ")
 
-    if (!setClause) return null
+    const values = [userId, ...Object.values(updates)]
 
-    const users = await sql`
+    const result = await sql`
       UPDATE users 
       SET ${sql.unsafe(setClause)}, updated_at = NOW()
       WHERE id = ${userId}
       RETURNING *
     `
-    return users[0] || null
+    return result[0] || null
+  },
+
+  findAll: async (limit = 50, offset = 0): Promise<User[]> => {
+    const result = await sql`
+      SELECT u.*, p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
+      FROM users u
+      LEFT JOIN plans p ON u.plan_id = p.id
+      ORDER BY u.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `
+    return result
+  },
+
+  updateRole: async (userId: string, role: "user" | "admin" | "super_admin"): Promise<User | null> => {
+    const result = await sql`
+      UPDATE users 
+      SET role = ${role}, updated_at = NOW()
+      WHERE id = ${userId}
+      RETURNING *
+    `
+    return result[0] || null
   },
 }
 
-// Session queries
 export const sessionQueries = {
-  create: async (userId: string, token: string, expiresAt: Date) => {
-    const sessions = await sql`
-      INSERT INTO user_sessions (user_id, session_token, expires_at)
-      VALUES (${userId}, ${token}, ${expiresAt.toISOString()})
+  create: async (userId: string, token: string, expiresAt: Date): Promise<Session> => {
+    const result = await sql`
+      INSERT INTO sessions (user_id, token, expires_at)
+      VALUES (${userId}, ${token}, ${expiresAt})
       RETURNING *
     `
-    return sessions[0]
+    return result[0]
   },
 
-  findByToken: async (token: string) => {
-    const sessions = await sql`
-      SELECT u.*, p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
-      FROM user_sessions s
+  findByToken: async (token: string): Promise<(User & Session) | null> => {
+    const result = await sql`
+      SELECT s.*, u.*, p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
+      FROM sessions s
       JOIN users u ON s.user_id = u.id
       LEFT JOIN plans p ON u.plan_id = p.id
-      WHERE s.session_token = ${token} 
-        AND s.expires_at > NOW()
-        AND u.is_active = true
+      WHERE s.token = ${token} AND s.expires_at > NOW()
       LIMIT 1
     `
-    return sessions[0] || null
+    return result[0] || null
   },
 
-  delete: async (token: string) => {
-    await sql`
-      DELETE FROM user_sessions 
-      WHERE session_token = ${token}
-    `
+  delete: async (token: string): Promise<void> => {
+    await sql`DELETE FROM sessions WHERE token = ${token}`
   },
 
-  cleanup: async () => {
-    await sql`
-      DELETE FROM user_sessions 
-      WHERE expires_at <= NOW()
-    `
+  deleteExpired: async (): Promise<void> => {
+    await sql`DELETE FROM sessions WHERE expires_at <= NOW()`
   },
 }
 
-// Audit queries
-export const auditQueries = {
-  log: async (data: { user_id: string; action: string; details?: any; ip_address?: string }) => {
-    const logs = await sql`
-      INSERT INTO audit_logs (user_id, action, details, ip_address)
-      VALUES (${data.user_id}, ${data.action}, ${JSON.stringify(data.details || {})}, ${data.ip_address || null})
-      RETURNING *
-    `
-    return logs[0]
-  },
-
-  findByUser: async (userId: string, limit = 50) => {
-    const logs = await sql`
-      SELECT * FROM audit_logs 
-      WHERE user_id = ${userId}
-      ORDER BY created_at DESC
-      LIMIT ${limit}
-    `
-    return logs
-  },
-}
-
-// Plan queries
 export const planQueries = {
-  findAll: async () => {
-    const plans = await sql`
-      SELECT * FROM plans 
-      ORDER BY price ASC
+  findAll: async (): Promise<Plan[]> => {
+    const result = await sql`
+      SELECT * FROM plans
+      ORDER BY price_monthly ASC
     `
-    return plans
+    return result
   },
 
-  findById: async (id: string) => {
-    const plans = await sql`
-      SELECT * FROM plans 
+  findById: async (id: string): Promise<Plan | null> => {
+    const result = await sql`
+      SELECT * FROM plans
       WHERE id = ${id}
       LIMIT 1
     `
-    return plans[0] || null
+    return result[0] || null
   },
 
-  findActive: async () => {
-    const plans = await sql`
-      SELECT * FROM plans 
-      WHERE is_active = true
-      ORDER BY price ASC
-    `
-    return plans
-  },
-}
-
-// Media queries
-export const mediaQueries = {
-  create: async (data: {
-    user_id: string
-    filename: string
-    original_name: string
-    mime_type: string
-    size: number
-    url: string
-    folder_id?: string
-  }) => {
-    const media = await sql`
-      INSERT INTO media_assets (
-        user_id, filename, original_name, mime_type, size, url, folder_id
-      )
-      VALUES (
-        ${data.user_id}, ${data.filename}, ${data.original_name}, 
-        ${data.mime_type}, ${data.size}, ${data.url}, ${data.folder_id || null}
-      )
+  create: async (planData: {
+    name: string
+    description?: string
+    price_monthly: number
+    price_yearly: number
+    max_screens: number
+    max_storage_gb: number
+    max_playlists: number
+    features: string[]
+    is_active: boolean
+  }): Promise<Plan> => {
+    const result = await sql`
+      INSERT INTO plans (name, description, price_monthly, price_yearly, max_screens, max_storage_gb, max_playlists, features, is_active)
+      VALUES (${planData.name}, ${planData.description || null}, ${planData.price_monthly}, ${planData.price_yearly}, ${planData.max_screens}, ${planData.max_storage_gb}, ${planData.max_playlists}, ${JSON.stringify(planData.features)}, ${planData.is_active})
       RETURNING *
     `
-    return media[0]
+    return result[0]
   },
 
-  findByUser: async (userId: string, folderId?: string) => {
-    if (folderId) {
-      const media = await sql`
-        SELECT * FROM media_assets 
-        WHERE user_id = ${userId} AND folder_id = ${folderId}
-        ORDER BY created_at DESC
-      `
-      return media
-    } else {
-      const media = await sql`
-        SELECT * FROM media_assets 
-        WHERE user_id = ${userId} AND folder_id IS NULL
-        ORDER BY created_at DESC
-      `
-      return media
+  update: async (
+    id: string,
+    planData: Partial<{
+      name: string
+      description: string
+      price_monthly: number
+      price_yearly: number
+      max_screens: number
+      max_storage_gb: number
+      max_playlists: number
+      features: string[]
+      is_active: boolean
+    }>,
+  ): Promise<Plan | null> => {
+    const updates = { ...planData }
+    if (updates.features) {
+      updates.features = JSON.stringify(updates.features) as any
     }
-  },
 
-  delete: async (id: string, userId: string) => {
-    const media = await sql`
-      DELETE FROM media_assets 
-      WHERE id = ${id} AND user_id = ${userId}
+    const setClause = Object.keys(updates)
+      .map((key, index) => `${key} = $${index + 2}`)
+      .join(", ")
+
+    const values = [id, ...Object.values(updates)]
+
+    const result = await sql`
+      UPDATE plans 
+      SET ${sql.unsafe(setClause)}, updated_at = NOW()
+      WHERE id = ${id}
       RETURNING *
     `
-    return media[0] || null
+    return result[0] || null
+  },
+
+  delete: async (id: string): Promise<boolean> => {
+    const result = await sql`
+      DELETE FROM plans 
+      WHERE id = ${id}
+    `
+    return result.count > 0
   },
 }
 
-// Folder queries
-export const folderQueries = {
-  create: async (data: { user_id: string; name: string; parent_id?: string }) => {
-    const folders = await sql`
-      INSERT INTO media_folders (user_id, name, parent_id)
-      VALUES (${data.user_id}, ${data.name}, ${data.parent_id || null})
-      RETURNING *
+export const featureQueries = {
+  findAll: async (): Promise<Feature[]> => {
+    const result = await sql`
+      SELECT * FROM features
+      ORDER BY name ASC
     `
-    return folders[0]
+    return result
   },
 
-  findByUser: async (userId: string, parentId?: string) => {
-    if (parentId) {
-      const folders = await sql`
-        SELECT * FROM media_folders 
-        WHERE user_id = ${userId} AND parent_id = ${parentId}
-        ORDER BY name ASC
-      `
-      return folders
-    } else {
-      const folders = await sql`
-        SELECT * FROM media_folders 
-        WHERE user_id = ${userId} AND parent_id IS NULL
-        ORDER BY name ASC
-      `
-      return folders
-    }
+  findById: async (id: string): Promise<Feature | null> => {
+    const result = await sql`
+      SELECT * FROM features
+      WHERE id = ${id}
+      LIMIT 1
+    `
+    return result[0] || null
   },
 
-  delete: async (id: string, userId: string) => {
-    const folders = await sql`
-      DELETE FROM media_folders 
-      WHERE id = ${id} AND user_id = ${userId}
+  create: async (featureData: {
+    name: string
+    description?: string
+    is_active: boolean
+  }): Promise<Feature> => {
+    const result = await sql`
+      INSERT INTO features (name, description, is_active)
+      VALUES (${featureData.name}, ${featureData.description || null}, ${featureData.is_active})
       RETURNING *
     `
-    return folders[0] || null
+    return result[0]
+  },
+
+  update: async (
+    id: string,
+    featureData: Partial<{
+      name: string
+      description: string
+      is_active: boolean
+    }>,
+  ): Promise<Feature | null> => {
+    const setClause = Object.keys(featureData)
+      .map((key, index) => `${key} = $${index + 2}`)
+      .join(", ")
+
+    const values = [id, ...Object.values(featureData)]
+
+    const result = await sql`
+      UPDATE features 
+      SET ${sql.unsafe(setClause)}, updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `
+    return result[0] || null
+  },
+
+  delete: async (id: string): Promise<boolean> => {
+    const result = await sql`
+      DELETE FROM features 
+      WHERE id = ${id}
+    `
+    return result.count > 0
   },
 }
+
+export const auditQueries = {
+  log: async (logData: {
+    user_id?: string
+    action: string
+    details: Record<string, any>
+    ip_address?: string
+    user_agent?: string
+  }): Promise<AuditLog> => {
+    const result = await sql`
+      INSERT INTO audit_logs (user_id, action, details, ip_address, user_agent)
+      VALUES (${logData.user_id || null}, ${logData.action}, ${JSON.stringify(logData.details)}, ${logData.ip_address || null}, ${logData.user_agent || null})
+      RETURNING *
+    `
+    return result[0]
+  },
+
+  findByUser: async (userId: string, limit = 50, offset = 0): Promise<AuditLog[]> => {
+    const result = await sql`
+      SELECT * FROM audit_logs
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `
+    return result
+  },
+
+  findAll: async (limit = 100, offset = 0): Promise<AuditLog[]> => {
+    const result = await sql`
+      SELECT * FROM audit_logs
+      ORDER BY created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `
+    return result
+  },
+}
+
+export const executeQuery = async (query: string, params: any[] = []): Promise<any[]> => {
+  try {
+    console.log("Executing query:", query)
+    console.log("With params:", params)
+
+    const result = await sql.unsafe(query, params)
+    console.log("Query result:", result)
+
+    return result
+  } catch (error) {
+    console.error("Database query error:", error)
+    throw error
+  }
+}
+
+export default sql
