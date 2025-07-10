@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { authService } from "@/lib/auth"
-import { sessionQueries } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,75 +8,66 @@ export async function GET(request: NextRequest) {
 
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
+    const allCookies = cookieStore.getAll()
 
-    console.log("Session Debug API: Session token exists:", !!sessionToken)
     console.log(
-      "Session Debug API: Session token preview:",
-      sessionToken ? sessionToken.substring(0, 20) + "..." : "null",
+      "Session Debug API: Found cookies:",
+      allCookies.map((c) => c.name),
     )
 
-    const debugInfo: any = {
-      hasSessionCookie: !!sessionToken,
-      sessionTokenPreview: sessionToken ? sessionToken.substring(0, 20) + "..." : null,
-      cookieNames: (await cookies()).getAll().map((c) => c.name),
-      timestamp: new Date().toISOString(),
-    }
+    let sessionData = null
+    let user = null
 
-    if (!sessionToken) {
-      console.log("Session Debug API: No session token found")
-      return NextResponse.json({
-        success: false,
-        error: "No session token",
-        debug: debugInfo,
-      })
-    }
-
-    // Try to verify session
-    const user = await authService.verifySession(sessionToken)
-    console.log("Session Debug API: User verification result:", {
-      userExists: !!user,
-      userRole: user?.role,
-      userId: user?.id,
-    })
-
-    debugInfo.userVerified = !!user
-    debugInfo.userRole = user?.role
-    debugInfo.userId = user?.id
-    debugInfo.userEmail = user?.email
-
-    // Get raw session data
-    try {
-      const rawSession = await sessionQueries.findByToken(sessionToken)
-      console.log("Session Debug API: Raw session data exists:", !!rawSession)
-
-      debugInfo.rawSessionExists = !!rawSession
-      if (rawSession) {
-        debugInfo.rawSessionData = {
-          user_id: rawSession.user_id,
-          email: rawSession.email,
-          role: rawSession.role,
-          expires_at: rawSession.expires_at,
-          created_at: rawSession.created_at,
+    if (sessionToken) {
+      try {
+        user = await authService.verifySession(sessionToken)
+        sessionData = {
+          token: sessionToken.substring(0, 10) + "...",
+          valid: !!user,
+          user: user
+            ? {
+                id: user.id,
+                email: user.email,
+                role: user.role,
+                verified: user.is_email_verified,
+              }
+            : null,
+        }
+      } catch (error) {
+        console.log("Session Debug API: Session verification failed:", error)
+        sessionData = {
+          token: sessionToken.substring(0, 10) + "...",
+          valid: false,
+          error: error instanceof Error ? error.message : "Unknown error",
         }
       }
-    } catch (sessionError) {
-      console.error("Session Debug API: Error fetching raw session:", sessionError)
-      debugInfo.rawSessionError = sessionError instanceof Error ? sessionError.message : "Unknown error"
     }
+
+    const debugInfo = {
+      timestamp: new Date().toISOString(),
+      cookies: {
+        all: allCookies.map((c) => ({ name: c.name, hasValue: !!c.value })),
+        session: sessionToken
+          ? {
+              exists: true,
+              length: sessionToken.length,
+              preview: sessionToken.substring(0, 10) + "...",
+            }
+          : null,
+      },
+      session: sessionData,
+      headers: {
+        userAgent: request.headers.get("user-agent"),
+        origin: request.headers.get("origin"),
+        referer: request.headers.get("referer"),
+      },
+    }
+
+    console.log("Session Debug API: Returning debug info")
 
     return NextResponse.json({
       success: true,
-      user: user
-        ? {
-            id: user.id,
-            email: user.email,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            role: user.role,
-            is_email_verified: user.is_email_verified,
-          }
-        : null,
-      debug: debugInfo,
+      data: debugInfo,
     })
   } catch (error) {
     console.error("Session Debug API: Error:", error)

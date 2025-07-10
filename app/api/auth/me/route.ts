@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     console.log("Auth Me API: Session token exists:", !!sessionToken)
     console.log(
       "Auth Me API: All cookies:",
-      (await cookies()).getAll().map((c) => c.name),
+      cookieStore.getAll().map((c) => c.name),
     )
 
     if (!sessionToken) {
@@ -20,20 +20,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
     }
 
+    console.log("Auth Me API: Verifying session...")
     const user = await authService.verifySession(sessionToken)
-    console.log("Auth Me API: User verification result:", {
-      userExists: !!user,
-      userRole: user?.role,
-      userId: user?.id,
-      userEmail: user?.email,
-    })
 
     if (!user) {
       console.log("Auth Me API: Session verification failed")
       return NextResponse.json({ success: false, error: "Invalid session" }, { status: 401 })
     }
 
-    console.log("Auth Me API: Returning user data successfully")
+    console.log("Auth Me API: User verified successfully:", {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    })
+
     return NextResponse.json({
       success: true,
       user: {
