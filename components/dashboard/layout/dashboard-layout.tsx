@@ -1,34 +1,21 @@
 "use client"
 
 import type React from "react"
-import { DashboardProvider } from "../context/dashboard-context"
 import { DashboardSidebar } from "./dashboard-sidebar"
 import { DashboardHeader } from "./dashboard-header"
 import { DashboardFooter } from "./dashboard-footer"
 
-interface DashboardLayoutProps {
-  children: React.ReactNode
-}
-
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <DashboardProvider>
-      <div className="flex h-screen bg-gray-50">
-        {/* Sidebar */}
-        <DashboardSidebar />
-
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
-          <DashboardHeader />
-
-          {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-6">{children}</main>
-
-          {/* Footer */}
-          <DashboardFooter />
-        </div>
+    <div className="min-h-screen bg-gray-50">
+      <DashboardSidebar />
+      <div className="lg:pl-64">
+        <DashboardHeader />
+        <main className="py-6">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">{children}</div>
+        </main>
+        <DashboardFooter />
       </div>
-    </DashboardProvider>
+    </div>
   )
 }

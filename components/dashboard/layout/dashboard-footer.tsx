@@ -1,9 +1,12 @@
+"use client"
+
 export function DashboardFooter() {
   return (
-    <footer className="border-t px-4 py-2">
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <p>&copy; 2024 BriteLite. All rights reserved.</p>
-        <p>Version 1.0.0</p>
+    <footer className="bg-white border-t">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="py-4 text-center text-sm text-gray-500">
+          © 2024 Digital Signage Platform. All rights reserved.
+        </div>
       </div>
     </footer>
   )
