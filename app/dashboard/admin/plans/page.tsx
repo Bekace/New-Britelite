@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Plus, Edit, Trash2, DollarSign, Users, TrendingUp } from "lucide-react"
+import { Plus, Edit, Trash2, DollarSign, Users, TrendingUp, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { useDashboard } from "@/components/dashboard/context/dashboard-context"
 
@@ -32,10 +33,10 @@ interface Plan {
   max_screens: number
   max_storage_gb: number
   max_playlists: number
-  features: string[]
   is_active: boolean
   created_at: string
   updated_at: string
+  user_count?: number
 }
 
 interface PlanStats {
@@ -43,6 +44,13 @@ interface PlanStats {
   activePlans: number
   totalRevenue: number
   totalUsers: number
+}
+
+interface DebugInfo {
+  userRole: string | undefined
+  apiResponse: any
+  lastError: string | null
+  requestCount: number
 }
 
 export default function PlansPage() {
@@ -56,6 +64,13 @@ export default function PlansPage() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
+  const [showDebug, setShowDebug] = useState(false)
+  const [debugInfo, setDebugInfo] = useState<DebugInfo>({
+    userRole: undefined,
+    apiResponse: null,
+    lastError: null,
+    requestCount: 0,
+  })
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -63,24 +78,84 @@ export default function PlansPage() {
     billing_cycle: "monthly" as "monthly" | "yearly",
     max_screens: 1,
     max_storage_gb: 1,
-    max_playlists: 1,
-    features: "",
+    max_playlists: 5,
     is_active: true,
   })
 
   const { user } = useDashboard()
   const { toast } = useToast()
 
+  const updateDebugInfo = (updates: Partial<DebugInfo>) => {
+    setDebugInfo((prev) => ({
+      ...prev,
+      ...updates,
+      requestCount: prev.requestCount + 1,
+    }))
+  }
+
   const fetchPlans = async () => {
     try {
-      const response = await fetch("/api/admin/plans")
-      if (response.ok) {
-        const data = await response.json()
+      setLoading(true)
+      updateDebugInfo({
+        userRole: user?.role,
+        lastError: null,
+      })
+
+      console.log("Fetching plans for user:", user?.role)
+
+      const response = await fetch("/api/admin/plans", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      })
+
+      const data = await response.json()
+
+      updateDebugInfo({
+        apiResponse: {
+          status: response.status,
+          ok: response.ok,
+          data: data,
+        },
+      })
+
+      console.log("Plans API Response:", {
+        status: response.status,
+        ok: response.ok,
+        data: data,
+      })
+
+      if (response.ok && data.success) {
         setPlans(data.plans || [])
-        setStats(data.stats || stats)
+
+        // Calculate stats from plans data
+        const totalPlans = data.plans?.length || 0
+        const activePlans = data.plans?.filter((p: Plan) => p.is_active).length || 0
+        const totalRevenue = data.plans?.reduce((sum: number, p: Plan) => sum + p.price * (p.user_count || 0), 0) || 0
+        const totalUsers = data.plans?.reduce((sum: number, p: Plan) => sum + (p.user_count || 0), 0) || 0
+
+        setStats({
+          totalPlans,
+          activePlans,
+          totalRevenue,
+          totalUsers,
+        })
+      } else {
+        const errorMsg = data.error || `HTTP ${response.status}: ${response.statusText}`
+        updateDebugInfo({ lastError: errorMsg })
+        console.error("Plans fetch error:", errorMsg)
+        toast({
+          title: "Error",
+          description: errorMsg,
+          variant: "destructive",
+        })
       }
     } catch (error) {
-      console.error("Error fetching plans:", error)
+      const errorMsg = error instanceof Error ? error.message : "Unknown error"
+      updateDebugInfo({ lastError: errorMsg })
+      console.error("Plans fetch error:", error)
       toast({
         title: "Error",
         description: "Failed to load plans",
@@ -92,8 +167,11 @@ export default function PlansPage() {
   }
 
   useEffect(() => {
-    if (user?.role === "super_admin") {
-      fetchPlans()
+    if (user) {
+      updateDebugInfo({ userRole: user.role })
+      if (user.role === "super_admin") {
+        fetchPlans()
+      }
     }
   }, [user])
 
@@ -104,21 +182,26 @@ export default function PlansPage() {
       const url = editingPlan ? `/api/admin/plans/${editingPlan.id}` : "/api/admin/plans"
       const method = editingPlan ? "PUT" : "POST"
 
+      console.log("Submitting plan:", { method, url, formData })
+
       const response = await fetch(url, {
         method,
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          ...formData,
-          features: formData.features
-            .split(",")
-            .map((f) => f.trim())
-            .filter(Boolean),
-        }),
+        credentials: "include",
+        body: JSON.stringify(formData),
       })
 
-      if (response.ok) {
+      const data = await response.json()
+
+      console.log("Plan submit response:", {
+        status: response.status,
+        ok: response.ok,
+        data: data,
+      })
+
+      if (response.ok && data.success) {
         toast({
           title: "Success",
           description: `Plan ${editingPlan ? "updated" : "created"} successfully`,
@@ -127,10 +210,16 @@ export default function PlansPage() {
         resetForm()
         fetchPlans()
       } else {
-        throw new Error("Failed to save plan")
+        const errorMsg = data.error || `HTTP ${response.status}: ${response.statusText}`
+        console.error("Plan submit error:", errorMsg)
+        toast({
+          title: "Error",
+          description: errorMsg,
+          variant: "destructive",
+        })
       }
     } catch (error) {
-      console.error("Error saving plan:", error)
+      console.error("Plan submit error:", error)
       toast({
         title: "Error",
         description: `Failed to ${editingPlan ? "update" : "create"} plan`,
@@ -149,7 +238,6 @@ export default function PlansPage() {
       max_screens: plan.max_screens,
       max_storage_gb: plan.max_storage_gb,
       max_playlists: plan.max_playlists,
-      features: plan.features.join(", "),
       is_active: plan.is_active,
     })
     setDialogOpen(true)
@@ -161,19 +249,27 @@ export default function PlansPage() {
     try {
       const response = await fetch(`/api/admin/plans/${planId}`, {
         method: "DELETE",
+        credentials: "include",
       })
 
-      if (response.ok) {
+      const data = await response.json()
+
+      if (response.ok && data.success) {
         toast({
           title: "Success",
           description: "Plan deleted successfully",
         })
         fetchPlans()
       } else {
-        throw new Error("Failed to delete plan")
+        const errorMsg = data.error || `HTTP ${response.status}: ${response.statusText}`
+        toast({
+          title: "Error",
+          description: errorMsg,
+          variant: "destructive",
+        })
       }
     } catch (error) {
-      console.error("Error deleting plan:", error)
+      console.error("Plan delete error:", error)
       toast({
         title: "Error",
         description: "Failed to delete plan",
@@ -191,8 +287,7 @@ export default function PlansPage() {
       billing_cycle: "monthly",
       max_screens: 1,
       max_storage_gb: 1,
-      max_playlists: 1,
-      features: "",
+      max_playlists: 5,
       is_active: true,
     })
   }
@@ -210,11 +305,32 @@ export default function PlansPage() {
 
   if (user?.role !== "super_admin") {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900">Access Denied</h2>
-          <p className="text-gray-600 mt-2">You need super admin privileges to access this page.</p>
-        </div>
+      <div className="space-y-6">
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-red-900 mb-2">Access Denied</h2>
+              <p className="text-red-700 mb-4">You need super admin privileges to access this page.</p>
+              <div className="text-sm text-red-600 space-y-1">
+                <p>
+                  Current Role: <span className="font-mono">{user?.role || "undefined"}</span>
+                </p>
+                <p>
+                  Required Role: <span className="font-mono">super_admin</span>
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setShowDebug(!showDebug)} className="mt-4">
+                {showDebug ? "Hide" : "Show"} Debug Info
+              </Button>
+              {showDebug && (
+                <div className="mt-4 p-4 bg-red-100 rounded-lg text-left">
+                  <pre className="text-xs text-red-800 whitespace-pre-wrap">{JSON.stringify(debugInfo, null, 2)}</pre>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -227,127 +343,182 @@ export default function PlansPage() {
           <h1 className="text-3xl font-bold">Plan Management</h1>
           <p className="text-muted-foreground">Manage subscription plans and pricing</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={resetForm}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Plan
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
-            <form onSubmit={handleSubmit}>
-              <DialogHeader>
-                <DialogTitle>{editingPlan ? "Edit Plan" : "Create New Plan"}</DialogTitle>
-                <DialogDescription>
-                  {editingPlan
-                    ? "Update the plan details below."
-                    : "Create a new subscription plan with the details below."}
-                </DialogDescription>
-              </DialogHeader>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowDebug(!showDebug)}>
+            {showDebug ? "Hide" : "Show"} Debug
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={resetForm}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Plan
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px]">
+              <form onSubmit={handleSubmit}>
+                <DialogHeader>
+                  <DialogTitle>{editingPlan ? "Edit Plan" : "Create New Plan"}</DialogTitle>
+                  <DialogDescription>
+                    {editingPlan
+                      ? "Update the plan details below."
+                      : "Create a new subscription plan with the details below."}
+                  </DialogDescription>
+                </DialogHeader>
 
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Plan Name</Label>
+                      <Input
+                        id="name"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        placeholder="e.g., Basic, Pro, Enterprise"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="price">Price ($)</Label>
+                      <Input
+                        id="price"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.price}
+                        onChange={(e) => setFormData({ ...formData, price: Number.parseFloat(e.target.value) || 0 })}
+                        required
+                      />
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="name">Plan Name</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="e.g., Basic, Pro, Enterprise"
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      placeholder="Plan description..."
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="price">Price ($)</Label>
-                    <Input
-                      id="price"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: Number.parseFloat(e.target.value) })}
-                      required
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="billing_cycle">Billing Cycle</Label>
+                      <Select
+                        value={formData.billing_cycle}
+                        onValueChange={(value: "monthly" | "yearly") =>
+                          setFormData({ ...formData, billing_cycle: value })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="monthly">Monthly</SelectItem>
+                          <SelectItem value="yearly">Yearly</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="max_screens">Max Screens</Label>
+                      <Input
+                        id="max_screens"
+                        type="number"
+                        min="1"
+                        value={formData.max_screens}
+                        onChange={(e) =>
+                          setFormData({ ...formData, max_screens: Number.parseInt(e.target.value) || 1 })
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="max_storage_gb">Storage (GB)</Label>
+                      <Input
+                        id="max_storage_gb"
+                        type="number"
+                        min="1"
+                        value={formData.max_storage_gb}
+                        onChange={(e) =>
+                          setFormData({ ...formData, max_storage_gb: Number.parseInt(e.target.value) || 1 })
+                        }
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="max_playlists">Max Playlists</Label>
+                      <Input
+                        id="max_playlists"
+                        type="number"
+                        min="1"
+                        value={formData.max_playlists}
+                        onChange={(e) =>
+                          setFormData({ ...formData, max_playlists: Number.parseInt(e.target.value) || 1 })
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="is_active"
+                      checked={formData.is_active}
+                      onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
                     />
+                    <Label htmlFor="is_active">Active Plan</Label>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Plan description..."
-                    required
-                  />
-                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">{editingPlan ? "Update Plan" : "Create Plan"}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
 
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="max_screens">Max Screens</Label>
-                    <Input
-                      id="max_screens"
-                      type="number"
-                      min="1"
-                      value={formData.max_screens}
-                      onChange={(e) => setFormData({ ...formData, max_screens: Number.parseInt(e.target.value) })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="max_storage_gb">Storage (GB)</Label>
-                    <Input
-                      id="max_storage_gb"
-                      type="number"
-                      min="1"
-                      value={formData.max_storage_gb}
-                      onChange={(e) => setFormData({ ...formData, max_storage_gb: Number.parseInt(e.target.value) })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="max_playlists">Max Playlists</Label>
-                    <Input
-                      id="max_playlists"
-                      type="number"
-                      min="1"
-                      value={formData.max_playlists}
-                      onChange={(e) => setFormData({ ...formData, max_playlists: Number.parseInt(e.target.value) })}
-                      required
-                    />
-                  </div>
+      {/* Debug Panel */}
+      {showDebug && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="text-blue-900">Debug Information</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <strong>User Role:</strong> <span className="font-mono">{debugInfo.userRole}</span>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="features">Features (comma-separated)</Label>
-                  <Textarea
-                    id="features"
-                    value={formData.features}
-                    onChange={(e) => setFormData({ ...formData, features: e.target.value })}
-                    placeholder="e.g., HD Content, Analytics, Priority Support"
-                  />
+                <div>
+                  <strong>Request Count:</strong> <span className="font-mono">{debugInfo.requestCount}</span>
                 </div>
-
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="is_active"
-                    checked={formData.is_active}
-                    onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-                  />
-                  <Label htmlFor="is_active">Active Plan</Label>
+                <div>
+                  <strong>Last Error:</strong>{" "}
+                  <span className="font-mono text-red-600">{debugInfo.lastError || "None"}</span>
+                </div>
+                <div>
+                  <strong>Plans Count:</strong> <span className="font-mono">{plans.length}</span>
                 </div>
               </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit">{editingPlan ? "Update Plan" : "Create Plan"}</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+              <div>
+                <strong>Last API Response:</strong>
+                <pre className="mt-2 p-2 bg-blue-100 rounded text-xs overflow-auto max-h-40">
+                  {JSON.stringify(debugInfo.apiResponse, null, 2)}
+                </pre>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -425,21 +596,11 @@ export default function PlansPage() {
                   <span>Max Playlists:</span>
                   <span className="font-medium">{plan.max_playlists}</span>
                 </div>
-              </div>
-
-              {plan.features.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">Features:</h4>
-                  <ul className="text-sm text-muted-foreground space-y-1">
-                    {plan.features.map((feature, index) => (
-                      <li key={index} className="flex items-center">
-                        <span className="w-1 h-1 bg-current rounded-full mr-2"></span>
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
+                <div className="flex justify-between text-sm">
+                  <span>Users:</span>
+                  <span className="font-medium">{plan.user_count || 0}</span>
                 </div>
-              )}
+              </div>
 
               <div className="flex space-x-2 pt-4">
                 <Button variant="outline" size="sm" onClick={() => handleEdit(plan)} className="flex-1">
