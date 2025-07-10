@@ -1,14 +1,22 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useEffect, useState } from "react"
-import type { User } from "@/lib/auth"
+import { createContext, useContext, useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+
+interface User {
+  id: string
+  email: string
+  first_name: string
+  last_name: string
+  role: string
+  avatar_url?: string
+}
 
 interface DashboardContextType {
   user: User | null
   loading: boolean
-  error: string | null
-  refreshUser: () => Promise<void>
+  logout: () => Promise<void>
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
@@ -16,47 +24,57 @@ const DashboardContext = createContext<DashboardContextType | undefined>(undefin
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
 
-  const fetchUser = async () => {
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const response = await fetch("/api/auth/me", {
+          credentials: "include",
+        })
+
+        if (response.ok) {
+          const userData = await response.json()
+          setUser(userData)
+        } else {
+          router.push("/auth/login")
+        }
+      } catch (error) {
+        console.error("Failed to fetch user:", error)
+        router.push("/auth/login")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchUser()
+  }, [router])
+
+  const logout = async () => {
     try {
-      setLoading(true)
-      setError(null)
-
-      const response = await fetch("/api/auth/me", {
+      await fetch("/api/auth/logout", {
+        method: "POST",
         credentials: "include",
       })
-
-      if (response.ok) {
-        const userData = await response.json()
-        setUser(userData.user)
-      } else if (response.status === 401) {
-        setUser(null)
-      } else {
-        throw new Error("Failed to fetch user")
-      }
-    } catch (err) {
-      console.error("Error fetching user:", err)
-      setError(err instanceof Error ? err.message : "Failed to fetch user")
       setUser(null)
-    } finally {
-      setLoading(false)
+      router.push("/auth/login")
+    } catch (error) {
+      console.error("Logout error:", error)
     }
   }
 
-  const refreshUser = async () => {
-    await fetchUser()
-  }
-
-  useEffect(() => {
-    fetchUser()
-  }, [])
-
-  const value: DashboardContextType = {
+  const value = {
     user,
     loading,
-    error,
-    refreshUser,
+    logout,
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+      </div>
+    )
   }
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>
