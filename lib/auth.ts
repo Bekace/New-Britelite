@@ -1,8 +1,8 @@
 import { cookies } from "next/headers"
 import type { NextRequest } from "next/server"
 import bcrypt from "bcryptjs"
-import jwt from "jsonwebtoken"
 import crypto from "crypto"
+import jwt from "jsonwebtoken" // Added import for jwt
 import { userQueries, sessionQueries, auditQueries } from "./database"
 
 if (!process.env.JWT_SECRET) {
@@ -78,7 +78,7 @@ export const tokenUtils = {
   },
 
   generateJWT: (payload: any): string => {
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" })
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" }) // Updated to use jwt.sign instead of generateToken
   },
 
   verifyJWT: (token: string): any => {
@@ -263,15 +263,16 @@ export const verifyPassword = async (password: string, hash: string): Promise<bo
   return await passwordUtils.verify(password, hash)
 }
 
-export const generateToken = (payload: any): string => {
-  return tokenUtils.generateJWT(payload)
+export const hashPassword = async (password: string): Promise<string> => {
+  return await bcrypt.hash(password, 12)
 }
 
-export const requireAuth = async (sessionToken?: string): Promise<User | null> => {
-  if (!sessionToken) {
-    return null
-  }
-  return await authService.verifySession(sessionToken)
+export const generateToken = (): string => {
+  return crypto.randomBytes(32).toString("hex")
+}
+
+export const requireAuth = async (request: NextRequest): Promise<User | null> => {
+  return await getCurrentUserFromRequest(request)
 }
 
 export const requireAdmin = (user: User | null): boolean => {
@@ -287,7 +288,13 @@ export const getCurrentUser = async (): Promise<User | null> => {
       return null
     }
 
-    return await authService.verifySession(sessionToken)
+    const session = await sessionQueries.findByToken(sessionToken)
+    if (!session) {
+      return null
+    }
+
+    const { password_hash, email_verification_token, password_reset_token, password_reset_expires, ...user } = session
+    return user as User
   } catch (error) {
     console.error("Get current user error:", error)
     return null
@@ -302,7 +309,13 @@ export const getCurrentUserFromRequest = async (request: NextRequest): Promise<U
       return null
     }
 
-    return await authService.verifySession(sessionToken)
+    const session = await sessionQueries.findByToken(sessionToken)
+    if (!session) {
+      return null
+    }
+
+    const { password_hash, email_verification_token, password_reset_token, password_reset_expires, ...user } = session
+    return user as User
   } catch (error) {
     console.error("Get current user from request error:", error)
     return null

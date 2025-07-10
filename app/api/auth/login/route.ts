@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { sql } from "@/lib/database"
-import { verifyPassword, generateToken } from "@/lib/auth"
+import { userQueries, sessionQueries, auditQueries } from "@/lib/database"
+import bcrypt from "bcryptjs"
+import crypto from "crypto"
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,20 +12,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Find user by email
-    const result = await sql`
-      SELECT id, email, password_hash, first_name, last_name, role, is_email_verified
-      FROM users 
-      WHERE email = ${email.toLowerCase()}
-    `
-
-    if (result.length === 0) {
+    const user = await userQueries.findByEmail(email.toLowerCase())
+    if (!user) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
     }
 
-    const user = result[0]
-
     // Verify password
-    const isValidPassword = await verifyPassword(password, user.password_hash)
+    const isValidPassword = await bcrypt.compare(password, user.password_hash)
     if (!isValidPassword) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
     }
@@ -34,8 +28,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Please verify your email before logging in" }, { status: 401 })
     }
 
-    // Generate JWT token
-    const token = generateToken(user.id)
+    // Generate session token
+    const sessionToken = crypto.randomBytes(32).toString("hex")
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+
+    // Create session
+    await sessionQueries.create(user.id, sessionToken, expiresAt)
+
+    // Log the login
+    await auditQueries.log({
+      user_id: user.id,
+      action: "user_login",
+      details: { email: user.email },
+      ip_address: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown",
+      user_agent: request.headers.get("user-agent") || "unknown",
+    })
 
     // Create response
     const response = NextResponse.json({
@@ -47,11 +54,13 @@ export async function POST(request: NextRequest) {
         lastName: user.last_name,
         role: user.role,
         isEmailVerified: user.is_email_verified,
+        planName: user.plan_name,
+        businessName: user.business_name,
       },
     })
 
     // Set HTTP-only cookie
-    response.cookies.set("auth-token", token, {
+    response.cookies.set("session", sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

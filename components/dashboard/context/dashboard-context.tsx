@@ -2,14 +2,23 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
-import type { User } from "@/lib/auth"
+
+interface User {
+  id: string
+  email: string
+  firstName: string
+  lastName: string
+  role: "user" | "admin" | "super_admin"
+  isEmailVerified: boolean
+  planName?: string
+  businessName?: string
+}
 
 interface DashboardContextType {
   user: User | null
   loading: boolean
   error: string | null
   refreshUser: () => Promise<void>
-  logout: () => Promise<void>
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
@@ -24,15 +33,14 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       setError(null)
 
-      const response = await fetch("/api/auth/me", {
-        credentials: "include",
-      })
-
+      const response = await fetch("/api/auth/me")
       if (response.ok) {
-        const userData = await response.json()
-        setUser(userData.user)
-      } else {
+        const data = await response.json()
+        setUser(data.user)
+      } else if (response.status === 401) {
         setUser(null)
+      } else {
+        throw new Error("Failed to fetch user")
       }
     } catch (err) {
       console.error("Error fetching user:", err)
@@ -47,36 +55,18 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     await fetchUser()
   }
 
-  const logout = async () => {
-    try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      })
-      setUser(null)
-      window.location.href = "/auth/login"
-    } catch (err) {
-      console.error("Logout error:", err)
-    }
-  }
-
   useEffect(() => {
     fetchUser()
   }, [])
 
-  return (
-    <DashboardContext.Provider
-      value={{
-        user,
-        loading,
-        error,
-        refreshUser,
-        logout,
-      }}
-    >
-      {children}
-    </DashboardContext.Provider>
-  )
+  const value = {
+    user,
+    loading,
+    error,
+    refreshUser,
+  }
+
+  return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>
 }
 
 export function useDashboard() {
