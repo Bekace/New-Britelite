@@ -12,39 +12,50 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const folderId = searchParams.get("folder_id")
     const search = searchParams.get("search")
+    const fileType = searchParams.get("type")
 
-    let query = `
+    let whereClause = "WHERE user_id = $1"
+    const params: any[] = [user.id]
+    let paramIndex = 2
+
+    if (folderId) {
+      whereClause += ` AND folder_id = $${paramIndex}`
+      params.push(folderId)
+      paramIndex++
+    } else {
+      whereClause += " AND folder_id IS NULL"
+    }
+
+    if (search) {
+      whereClause += ` AND (original_filename ILIKE $${paramIndex} OR filename ILIKE $${paramIndex})`
+      params.push(`%${search}%`)
+      paramIndex++
+    }
+
+    if (fileType) {
+      whereClause += ` AND file_type = $${paramIndex}`
+      params.push(fileType)
+      paramIndex++
+    }
+
+    const query = `
       SELECT 
         id,
         filename,
         original_filename,
         file_type,
         file_size,
-        blob_url as url,
+        mime_type,
+        blob_url,
         thumbnail_url,
         folder_id,
         metadata,
         created_at,
         updated_at
       FROM media_assets 
-      WHERE user_id = $1
+      ${whereClause}
+      ORDER BY created_at DESC
     `
-    const params: any[] = [user.id]
-
-    if (folderId) {
-      query += ` AND folder_id = $2`
-      params.push(folderId)
-    } else {
-      query += ` AND folder_id IS NULL`
-    }
-
-    if (search) {
-      const searchIndex = params.length + 1
-      query += ` AND (original_filename ILIKE $${searchIndex} OR filename ILIKE $${searchIndex})`
-      params.push(`%${search}%`)
-    }
-
-    query += ` ORDER BY created_at DESC`
 
     const result = await sql.unsafe(query, params)
 
@@ -54,10 +65,12 @@ export async function GET(request: NextRequest) {
       original_filename: asset.original_filename,
       file_type: asset.file_type,
       file_size: asset.file_size,
-      url: asset.url,
+      mime_type: asset.mime_type,
+      url: asset.blob_url,
       thumbnail_url: asset.thumbnail_url,
       folder_id: asset.folder_id,
       created_at: asset.created_at,
+      updated_at: asset.updated_at,
       metadata: asset.metadata
         ? typeof asset.metadata === "string"
           ? JSON.parse(asset.metadata)
@@ -91,7 +104,7 @@ export async function DELETE(request: NextRequest) {
       WHERE id = ANY(${ids}) AND user_id = ${user.id}
     `
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, message: "Assets deleted successfully" })
   } catch (error) {
     console.error("Error deleting assets:", error)
     return NextResponse.json({ error: "Failed to delete assets" }, { status: 500 })

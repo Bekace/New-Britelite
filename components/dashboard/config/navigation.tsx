@@ -27,7 +27,6 @@ export interface NavigationItem {
 export interface NavigationSection {
   title: string
   items: NavigationItem[]
-  className?: string
 }
 
 export function getNavigationConfig(user: UserType | null): NavigationSection[] {
@@ -49,19 +48,16 @@ export function getNavigationConfig(user: UserType | null): NavigationSection[] 
           title: "Playlists",
           href: "/dashboard/playlists",
           icon: Play,
-          badge: "Soon",
         },
         {
           title: "Screens",
           href: "/dashboard/screens",
           icon: Monitor,
-          badge: "Soon",
         },
         {
           title: "Analytics",
           href: "/dashboard/analytics",
           icon: BarChart3,
-          badge: "Soon",
         },
       ],
     },
@@ -87,7 +83,6 @@ export function getNavigationConfig(user: UserType | null): NavigationSection[] 
           title: "Settings",
           href: "/dashboard/settings",
           icon: Settings,
-          badge: "Soon",
         },
         {
           title: "Help & Support",
@@ -102,7 +97,6 @@ export function getNavigationConfig(user: UserType | null): NavigationSection[] 
   if (user && (user.role === "admin" || user.role === "super_admin")) {
     sections.push({
       title: "Administration",
-      className: "border-t border-orange-200 pt-4 mt-4",
       items: [
         {
           title: "User Management",
@@ -110,25 +104,36 @@ export function getNavigationConfig(user: UserType | null): NavigationSection[] 
           icon: Users,
           roles: ["admin", "super_admin"],
         },
-        ...(user.role === "super_admin"
-          ? [
-              {
-                title: "Plan Management",
-                href: "/dashboard/admin/plans",
-                icon: Package,
-                roles: ["super_admin"],
-              },
-              {
-                title: "System Settings",
-                href: "/dashboard/admin/system",
-                icon: Shield,
-                roles: ["super_admin"],
-              },
-            ]
-          : []),
+        {
+          title: "Plan Management",
+          href: "/dashboard/admin/plans",
+          icon: Package,
+          roles: ["super_admin"],
+        },
+        {
+          title: "System Settings",
+          href: "/dashboard/admin/system",
+          icon: Shield,
+          roles: ["super_admin"],
+        },
       ],
     })
   }
 
   return sections
+}
+
+export function filterNavigationByRole(
+  sections: NavigationSection[],
+  userRole: string | undefined,
+): NavigationSection[] {
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (!item.roles) return true
+        return userRole && item.roles.includes(userRole)
+      }),
+    }))
+    .filter((section) => section.items.length > 0)
 }

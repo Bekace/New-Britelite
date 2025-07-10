@@ -7,8 +7,9 @@ import type { User } from "@/lib/auth"
 interface DashboardContextType {
   user: User | null
   loading: boolean
-  setUser: (user: User | null) => void
+  error: string | null
   refreshUser: () => Promise<void>
+  logout: () => Promise<void>
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
@@ -16,36 +17,66 @@ const DashboardContext = createContext<DashboardContextType | undefined>(undefin
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const refreshUser = async () => {
+  const fetchUser = async () => {
     try {
-      const response = await fetch("/api/auth/me")
+      setLoading(true)
+      setError(null)
+
+      const response = await fetch("/api/auth/me", {
+        credentials: "include",
+      })
+
       if (response.ok) {
-        const data = await response.json()
-        setUser(data.user)
+        const userData = await response.json()
+        setUser(userData.user)
       } else {
         setUser(null)
       }
-    } catch (error) {
-      console.error("Failed to fetch user:", error)
+    } catch (err) {
+      console.error("Error fetching user:", err)
+      setError("Failed to load user data")
       setUser(null)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    refreshUser()
-  }, [])
-
-  const value = {
-    user,
-    loading,
-    setUser,
-    refreshUser,
+  const refreshUser = async () => {
+    await fetchUser()
   }
 
-  return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      })
+      setUser(null)
+      window.location.href = "/auth/login"
+    } catch (err) {
+      console.error("Logout error:", err)
+    }
+  }
+
+  useEffect(() => {
+    fetchUser()
+  }, [])
+
+  return (
+    <DashboardContext.Provider
+      value={{
+        user,
+        loading,
+        error,
+        refreshUser,
+        logout,
+      }}
+    >
+      {children}
+    </DashboardContext.Provider>
+  )
 }
 
 export function useDashboard() {

@@ -1,6 +1,6 @@
+export { DashboardLayout } from "./layout/dashboard-layout"
 export { DashboardProvider, useDashboard } from "./context/dashboard-context"
-export { getNavigationConfig } from "./config/navigation"
 export { DashboardSidebar } from "./layout/dashboard-sidebar"
 export { DashboardHeader } from "./layout/dashboard-header"
 export { DashboardFooter } from "./layout/dashboard-footer"
-export { DashboardLayout } from "./layout/dashboard-layout"
+export { getNavigationConfig } from "./config/navigation"
