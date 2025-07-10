@@ -1,90 +1,205 @@
 "use client"
+
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { getNavigationConfig, filterNavigationByRole } from "../config/navigation"
-import { useDashboard } from "../context/dashboard-context"
+import {
+  Home,
+  ImageIcon,
+  Monitor,
+  BarChart3,
+  Settings,
+  Users,
+  CreditCard,
+  Bell,
+  User,
+  HelpCircle,
+  PlaySquare,
+} from "lucide-react"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarHeader,
+  SidebarFooter,
+} from "@/components/ui/sidebar"
+
+const navigationItems = [
+  {
+    title: "Dashboard",
+    url: "/dashboard",
+    icon: Home,
+  },
+  {
+    title: "Media Library",
+    url: "/dashboard/media",
+    icon: ImageIcon,
+  },
+  {
+    title: "Playlists",
+    url: "/dashboard/playlists",
+    icon: PlaySquare,
+  },
+  {
+    title: "Screens",
+    url: "/dashboard/screens",
+    icon: Monitor,
+  },
+  {
+    title: "Analytics",
+    url: "/dashboard/analytics",
+    icon: BarChart3,
+  },
+]
+
+const userItems = [
+  {
+    title: "Profile",
+    url: "/dashboard/profile",
+    icon: User,
+  },
+  {
+    title: "Billing",
+    url: "/dashboard/billing",
+    icon: CreditCard,
+  },
+  {
+    title: "Notifications",
+    url: "/dashboard/notifications",
+    icon: Bell,
+  },
+  {
+    title: "Settings",
+    url: "/dashboard/settings",
+    icon: Settings,
+  },
+  {
+    title: "Help",
+    url: "/dashboard/help",
+    icon: HelpCircle,
+  },
+]
+
+const adminItems = [
+  {
+    title: "User Management",
+    url: "/dashboard/admin/users",
+    icon: Users,
+  },
+  {
+    title: "Plan Management",
+    url: "/dashboard/admin/plans",
+    icon: CreditCard,
+  },
+]
+
+interface DashboardUser {
+  id: string
+  email: string
+  role: string
+}
 
 export function DashboardSidebar() {
   const pathname = usePathname()
-  const { user } = useDashboard()
+  const [user, setUser] = useState<DashboardUser | null>(null)
 
-  const navigationSections = getNavigationConfig(user)
-  const filteredSections = filterNavigationByRole(navigationSections, user?.role)
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const response = await fetch("/api/auth/me")
+        if (response.ok) {
+          const userData = await response.json()
+          setUser(userData)
+        }
+      } catch (error) {
+        console.error("Failed to fetch user:", error)
+      }
+    }
+
+    fetchUser()
+  }, [])
+
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin"
 
   return (
-    <div className="flex h-full w-64 flex-col bg-white border-r border-gray-200">
-      {/* Logo */}
-      <div className="flex h-16 items-center px-6 border-b border-gray-200">
-        <Link href="/dashboard" className="flex items-center space-x-2">
-          <div className="h-8 w-8 bg-orange-500 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">DS</span>
+    <Sidebar>
+      <SidebarHeader>
+        <div className="flex items-center gap-2 px-4 py-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Monitor className="h-4 w-4" />
           </div>
-          <span className="text-xl font-bold text-gray-900">Digital Signage</span>
-        </Link>
-      </div>
-
-      {/* Navigation */}
-      <ScrollArea className="flex-1 px-3 py-4">
-        <nav className="space-y-6">
-          {filteredSections.map((section, sectionIndex) => (
-            <div key={sectionIndex} className="space-y-2">
-              {section.title && (
-                <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{section.title}</h3>
-              )}
-              <div className="space-y-1">
-                {section.items.map((item) => {
-                  const isActive = pathname === item.href
-                  const Icon = item.icon
-
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors",
-                        isActive
-                          ? "bg-orange-100 text-orange-700 border-r-2 border-orange-500"
-                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
-                      )}
-                    >
-                      <Icon className="mr-3 h-5 w-5 flex-shrink-0" />
-                      <span className="flex-1">{item.title}</span>
-                      {item.badge && (
-                        <Badge variant="secondary" className="ml-2 text-xs">
-                          {item.badge}
-                        </Badge>
-                      )}
-                    </Link>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-      </ScrollArea>
-
-      {/* User Info */}
-      {user && (
-        <div className="border-t border-gray-200 p-4">
-          <div className="flex items-center space-x-3">
-            <div className="h-8 w-8 bg-gray-300 rounded-full flex items-center justify-center">
-              <span className="text-sm font-medium text-gray-700">
-                {user.first_name?.[0]}
-                {user.last_name?.[0]}
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">
-                {user.first_name} {user.last_name}
-              </p>
-              <p className="text-xs text-gray-500 truncate">{user.email}</p>
-            </div>
-          </div>
+          <span className="font-semibold">BriteLite</span>
         </div>
-      )}
-    </div>
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Main</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navigationItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={pathname === item.url}>
+                    <Link href={item.url}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Account</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {userItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={pathname === item.url}>
+                    <Link href={item.url}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-orange-600">Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild isActive={pathname === item.url}>
+                      <Link href={item.url} className="text-orange-600 hover:text-orange-700">
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+      </SidebarContent>
+
+      <SidebarFooter>
+        <div className="px-4 py-2 text-xs text-muted-foreground">
+          {user ? `Logged in as ${user.email}` : "Loading..."}
+        </div>
+      </SidebarFooter>
+    </Sidebar>
   )
 }
