@@ -1,28 +1,33 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getCurrentUserFromRequest } from "@/lib/auth"
+import { sessionQueries } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUserFromRequest(request)
+    const sessionToken = request.cookies.get("session")?.value
 
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (!sessionToken) {
+      return NextResponse.json({ error: "No session token" }, { status: 401 })
+    }
+
+    const session = await sessionQueries.findByToken(sessionToken)
+    if (!session) {
+      return NextResponse.json({ error: "Invalid session" }, { status: 401 })
     }
 
     return NextResponse.json({
       user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        role: user.role,
-        isEmailVerified: user.is_email_verified,
-        planName: user.plan_name,
-        businessName: user.business_name,
+        id: session.user_id,
+        email: session.email,
+        first_name: session.first_name,
+        last_name: session.last_name,
+        role: session.role,
+        is_email_verified: session.is_email_verified,
+        business_name: session.business_name,
+        plan_name: session.plan_name,
       },
     })
   } catch (error) {
-    console.error("Get current user error:", error)
+    console.error("Auth me error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
