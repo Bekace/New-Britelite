@@ -43,18 +43,19 @@ export async function POST(request: NextRequest) {
 
     console.log("Debug Database API: Executing query:", query)
 
-    // Execute the query safely
+    // Execute the query
     const result = await sql.unsafe(query)
 
-    console.log("Debug Database API: Query executed successfully, rows:", result.length)
+    console.log("Debug Database API: Query executed successfully:", {
+      rowCount: Array.isArray(result) ? result.length : "N/A",
+    })
 
     return NextResponse.json({
       success: true,
       data: result,
-      rowCount: result.length,
       query: query,
+      executedAt: new Date().toISOString(),
       executedBy: user.email,
-      timestamp: new Date().toISOString(),
     })
   } catch (error) {
     console.error("Debug Database API: Error:", error)

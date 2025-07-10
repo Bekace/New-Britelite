@@ -10,7 +10,6 @@ export async function GET(request: NextRequest) {
     const sessionToken = cookieStore.get("session")?.value
 
     console.log("Auth Me API: Session token exists:", !!sessionToken)
-    console.log("Auth Me API: Session token preview:", sessionToken ? sessionToken.substring(0, 20) + "..." : "null")
 
     if (!sessionToken) {
       console.log("Auth Me API: No session token found")
@@ -31,7 +30,6 @@ export async function GET(request: NextRequest) {
     }
 
     console.log("Auth Me API: Returning user data")
-
     return NextResponse.json({
       success: true,
       user: {

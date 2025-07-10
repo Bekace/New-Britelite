@@ -39,8 +39,13 @@ export default function DebugPage() {
   const [sqlQuery, setSqlQuery] = useState("SELECT * FROM users WHERE role = 'super_admin' LIMIT 5;")
   const [sqlResult, setSqlResult] = useState<any>(null)
   const [activeTab, setActiveTab] = useState("overview")
+  const [mounted, setMounted] = useState(false)
 
   const { user } = useDashboard()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const runTest = async (name: string, testFn: () => Promise<any>): Promise<TestResult> => {
     const startTime = Date.now()
@@ -160,21 +165,23 @@ export default function DebugPage() {
       }),
     )
 
-    // Test 7: Cookie Check
-    tests.push(
-      await runTest("Browser Cookies", async () => {
-        const cookies = document.cookie.split(";").reduce((acc: any, cookie) => {
-          const [key, value] = cookie.trim().split("=")
-          acc[key] = value
-          return acc
-        }, {})
-        return {
-          allCookies: cookies,
-          hasSession: !!cookies.session,
-          sessionValue: cookies.session ? cookies.session.substring(0, 20) + "..." : null,
-        }
-      }),
-    )
+    // Test 7: Cookie Check (only on client side)
+    if (mounted && typeof window !== "undefined") {
+      tests.push(
+        await runTest("Browser Cookies", async () => {
+          const cookies = document.cookie.split(";").reduce((acc: any, cookie) => {
+            const [key, value] = cookie.trim().split("=")
+            if (key) acc[key] = value
+            return acc
+          }, {})
+          return {
+            allCookies: cookies,
+            hasSession: !!cookies.session,
+            sessionValue: cookies.session ? cookies.session.substring(0, 20) + "..." : null,
+          }
+        }),
+      )
+    }
 
     setDebugData((prev) => ({ ...prev, apis: tests }))
     setLoading(false)
@@ -223,9 +230,41 @@ export default function DebugPage() {
     }
   }
 
+  const getCookieValue = (name: string) => {
+    if (!mounted || typeof window === "undefined") return "Loading..."
+    const cookies = document.cookie.split(";")
+    const cookie = cookies.find((c) => c.trim().startsWith(`${name}=`))
+    return cookie ? cookie.split("=")[1] : "Not found"
+  }
+
+  const getCookieCount = () => {
+    if (!mounted || typeof window === "undefined") return 0
+    return document.cookie.split(";").filter((c) => c.trim()).length
+  }
+
+  const getAllCookies = () => {
+    if (!mounted || typeof window === "undefined") return "Loading..."
+    return document.cookie || "No cookies found"
+  }
+
   useEffect(() => {
-    runAllTests()
-  }, [])
+    if (mounted) {
+      runAllTests()
+    }
+  }, [mounted])
+
+  if (!mounted) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Debug Dashboard</h1>
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -383,7 +422,7 @@ export default function DebugPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSqlQuery("SELECT * FROM sessions WHERE expires_at > NOW() LIMIT 10;")}
+                  onClick={() => setSqlQuery("SELECT * FROM user_sessions WHERE expires_at > NOW() LIMIT 10;")}
                 >
                   Active Sessions
                 </Button>
@@ -430,31 +469,16 @@ export default function DebugPage() {
               <div className="space-y-4">
                 <div>
                   <Label>All Cookies</Label>
-                  <pre className="mt-1 p-2 bg-gray-100 rounded text-xs overflow-auto max-h-40">
-                    {document.cookie || "No cookies found"}
-                  </pre>
+                  <pre className="mt-1 p-2 bg-gray-100 rounded text-xs overflow-auto max-h-40">{getAllCookies()}</pre>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>Session Cookie</Label>
-                    <Input
-                      value={
-                        document.cookie
-                          .split(";")
-                          .find((c) => c.trim().startsWith("session="))
-                          ?.split("=")[1] || "Not found"
-                      }
-                      readOnly
-                      className="font-mono text-xs"
-                    />
+                    <Input value={getCookieValue("session")} readOnly className="font-mono text-xs" />
                   </div>
                   <div>
                     <Label>Cookie Count</Label>
-                    <Input
-                      value={document.cookie.split(";").filter((c) => c.trim()).length}
-                      readOnly
-                      className="font-mono"
-                    />
+                    <Input value={getCookieCount()} readOnly className="font-mono" />
                   </div>
                 </div>
               </div>
