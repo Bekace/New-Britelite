@@ -1,97 +1,151 @@
 import { neon } from "@neondatabase/serverless"
 
 if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL environment variable is not set")
+  throw new Error("DATABASE_URL environment variable is required")
 }
 
 export const sql = neon(process.env.DATABASE_URL)
 
 // User queries
 export const userQueries = {
-  async findByEmail(email: string) {
-    const result = await sql`
-      SELECT id, email, password_hash, first_name, last_name, role, is_email_verified, 
-             plan_id, business_name, created_at, updated_at
-      FROM users 
-      WHERE email = ${email}
+  findByEmail: async (email: string) => {
+    const users = await sql`
+      SELECT u.*, p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
+      FROM users u
+      LEFT JOIN plans p ON u.plan_id = p.id
+      WHERE u.email = ${email}
+      LIMIT 1
     `
-    return result[0] || null
+    return users[0] || null
   },
 
-  async findById(id: string) {
-    const result = await sql`
-      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.is_email_verified, 
-             u.business_name, u.created_at, u.updated_at, p.name as plan_name
+  findById: async (id: string) => {
+    const users = await sql`
+      SELECT u.*, p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
       FROM users u
       LEFT JOIN plans p ON u.plan_id = p.id
       WHERE u.id = ${id}
+      LIMIT 1
     `
-    return result[0] || null
+    return users[0] || null
   },
 
-  async create(userData: {
+  create: async (userData: {
     email: string
     password_hash: string
     first_name: string
     last_name: string
     business_name?: string
-    plan_id?: string
-  }) {
-    const result = await sql`
-      INSERT INTO users (email, password_hash, first_name, last_name, business_name, plan_id)
-      VALUES (${userData.email}, ${userData.password_hash}, ${userData.first_name}, 
-              ${userData.last_name}, ${userData.business_name || null}, ${userData.plan_id || null})
-      RETURNING id, email, first_name, last_name, role, is_email_verified
+    email_verification_token: string
+  }) => {
+    const users = await sql`
+      INSERT INTO users (
+        email, password_hash, first_name, last_name, business_name, 
+        email_verification_token, role, is_active, is_email_verified
+      )
+      VALUES (
+        ${userData.email}, ${userData.password_hash}, ${userData.first_name}, 
+        ${userData.last_name}, ${userData.business_name || null}, 
+        ${userData.email_verification_token}, 'user', true, false
+      )
+      RETURNING *
     `
-    return result[0]
+    return users[0]
   },
 
-  async updateEmailVerification(id: string, isVerified: boolean) {
-    await sql`
+  updateEmailVerification: async (token: string) => {
+    const users = await sql`
       UPDATE users 
-      SET is_email_verified = ${isVerified}, updated_at = NOW()
-      WHERE id = ${id}
+      SET is_email_verified = true, email_verification_token = null, updated_at = NOW()
+      WHERE email_verification_token = ${token}
+      RETURNING *
     `
+    return users[0] || null
   },
 
-  async updatePassword(id: string, password_hash: string) {
-    await sql`
+  setPasswordResetToken: async (email: string, token: string, expiresAt: Date) => {
+    const users = await sql`
       UPDATE users 
-      SET password_hash = ${password_hash}, updated_at = NOW()
-      WHERE id = ${id}
+      SET password_reset_token = ${token}, password_reset_expires = ${expiresAt.toISOString()}, updated_at = NOW()
+      WHERE email = ${email}
+      RETURNING *
     `
+    return users[0] || null
+  },
+
+  resetPassword: async (token: string, newPasswordHash: string) => {
+    const users = await sql`
+      UPDATE users 
+      SET password_hash = ${newPasswordHash}, password_reset_token = null, 
+          password_reset_expires = null, updated_at = NOW()
+      WHERE password_reset_token = ${token} 
+        AND password_reset_expires > NOW()
+      RETURNING *
+    `
+    return users[0] || null
+  },
+
+  updateProfile: async (
+    userId: string,
+    updates: {
+      first_name?: string
+      last_name?: string
+      business_name?: string
+      business_address?: string
+      phone?: string
+      avatar_url?: string
+    },
+  ) => {
+    const setClause = Object.entries(updates)
+      .filter(([_, value]) => value !== undefined)
+      .map(([key, _]) => `${key} = $${key}`)
+      .join(", ")
+
+    if (!setClause) return null
+
+    const users = await sql`
+      UPDATE users 
+      SET ${sql.unsafe(setClause)}, updated_at = NOW()
+      WHERE id = ${userId}
+      RETURNING *
+    `
+    return users[0] || null
   },
 }
 
 // Session queries
 export const sessionQueries = {
-  async create(userId: string, sessionToken: string, expiresAt: Date) {
-    await sql`
+  create: async (userId: string, token: string, expiresAt: Date) => {
+    const sessions = await sql`
       INSERT INTO user_sessions (user_id, session_token, expires_at)
-      VALUES (${userId}, ${sessionToken}, ${expiresAt})
+      VALUES (${userId}, ${token}, ${expiresAt.toISOString()})
+      RETURNING *
     `
+    return sessions[0]
   },
 
-  async findByToken(sessionToken: string) {
-    const result = await sql`
-      SELECT s.user_id, s.expires_at, u.email, u.first_name, u.last_name, u.role, 
-             u.is_email_verified, u.business_name, p.name as plan_name
+  findByToken: async (token: string) => {
+    const sessions = await sql`
+      SELECT u.*, p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
       FROM user_sessions s
       JOIN users u ON s.user_id = u.id
       LEFT JOIN plans p ON u.plan_id = p.id
-      WHERE s.session_token = ${sessionToken} AND s.expires_at > NOW()
+      WHERE s.session_token = ${token} 
+        AND s.expires_at > NOW()
+        AND u.is_active = true
+      LIMIT 1
     `
-    return result[0] || null
+    return sessions[0] || null
   },
 
-  async delete(sessionToken: string) {
+  delete: async (token: string) => {
     await sql`
       DELETE FROM user_sessions 
-      WHERE session_token = ${sessionToken}
+      WHERE session_token = ${token}
     `
   },
 
-  async deleteExpired() {
+  cleanup: async () => {
     await sql`
       DELETE FROM user_sessions 
       WHERE expires_at <= NOW()
@@ -101,95 +155,142 @@ export const sessionQueries = {
 
 // Audit queries
 export const auditQueries = {
-  async log(data: {
-    user_id?: string
-    action: string
-    details: any
-    ip_address: string
-    user_agent: string
-  }) {
-    await sql`
-      INSERT INTO audit_logs (user_id, action, details, ip_address, user_agent, created_at)
-      VALUES (${data.user_id || null}, ${data.action}, ${JSON.stringify(data.details)}, 
-              ${data.ip_address}, ${data.user_agent}, NOW())
+  log: async (data: { user_id: string; action: string; details?: any; ip_address?: string }) => {
+    const logs = await sql`
+      INSERT INTO audit_logs (user_id, action, details, ip_address)
+      VALUES (${data.user_id}, ${data.action}, ${JSON.stringify(data.details || {})}, ${data.ip_address || null})
+      RETURNING *
     `
+    return logs[0]
+  },
+
+  findByUser: async (userId: string, limit = 50) => {
+    const logs = await sql`
+      SELECT * FROM audit_logs 
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+      LIMIT ${limit}
+    `
+    return logs
   },
 }
 
 // Plan queries
 export const planQueries = {
-  async getAll() {
-    return await sql`
-      SELECT id, name, description, price, features, is_active, created_at
-      FROM plans 
+  findAll: async () => {
+    const plans = await sql`
+      SELECT * FROM plans 
+      ORDER BY price ASC
+    `
+    return plans
+  },
+
+  findById: async (id: string) => {
+    const plans = await sql`
+      SELECT * FROM plans 
+      WHERE id = ${id}
+      LIMIT 1
+    `
+    return plans[0] || null
+  },
+
+  findActive: async () => {
+    const plans = await sql`
+      SELECT * FROM plans 
       WHERE is_active = true
       ORDER BY price ASC
     `
-  },
-
-  async getById(id: string) {
-    const result = await sql`
-      SELECT id, name, description, price, features, is_active
-      FROM plans 
-      WHERE id = ${id}
-    `
-    return result[0] || null
+    return plans
   },
 }
 
 // Media queries
 export const mediaQueries = {
-  async getFolders(userId: string) {
-    return await sql`
-      SELECT id, name, parent_id, created_at, updated_at
-      FROM media_folders 
-      WHERE user_id = ${userId}
-      ORDER BY name ASC
-    `
-  },
-
-  async getAssets(userId: string, folderId?: string) {
-    if (folderId) {
-      return await sql`
-        SELECT id, filename, original_name, file_type, file_size, url, folder_id, created_at
-        FROM media_assets 
-        WHERE user_id = ${userId} AND folder_id = ${folderId}
-        ORDER BY created_at DESC
-      `
-    } else {
-      return await sql`
-        SELECT id, filename, original_name, file_type, file_size, url, folder_id, created_at
-        FROM media_assets 
-        WHERE user_id = ${userId} AND folder_id IS NULL
-        ORDER BY created_at DESC
-      `
-    }
-  },
-
-  async createFolder(userId: string, name: string, parentId?: string) {
-    const result = await sql`
-      INSERT INTO media_folders (user_id, name, parent_id)
-      VALUES (${userId}, ${name}, ${parentId || null})
-      RETURNING id, name, parent_id, created_at, updated_at
-    `
-    return result[0]
-  },
-
-  async createAsset(data: {
+  create: async (data: {
     user_id: string
     filename: string
     original_name: string
-    file_type: string
-    file_size: number
+    mime_type: string
+    size: number
     url: string
     folder_id?: string
-  }) {
-    const result = await sql`
-      INSERT INTO media_assets (user_id, filename, original_name, file_type, file_size, url, folder_id)
-      VALUES (${data.user_id}, ${data.filename}, ${data.original_name}, ${data.file_type}, 
-              ${data.file_size}, ${data.url}, ${data.folder_id || null})
-      RETURNING id, filename, original_name, file_type, file_size, url, folder_id, created_at
+  }) => {
+    const media = await sql`
+      INSERT INTO media_assets (
+        user_id, filename, original_name, mime_type, size, url, folder_id
+      )
+      VALUES (
+        ${data.user_id}, ${data.filename}, ${data.original_name}, 
+        ${data.mime_type}, ${data.size}, ${data.url}, ${data.folder_id || null}
+      )
+      RETURNING *
     `
-    return result[0]
+    return media[0]
+  },
+
+  findByUser: async (userId: string, folderId?: string) => {
+    if (folderId) {
+      const media = await sql`
+        SELECT * FROM media_assets 
+        WHERE user_id = ${userId} AND folder_id = ${folderId}
+        ORDER BY created_at DESC
+      `
+      return media
+    } else {
+      const media = await sql`
+        SELECT * FROM media_assets 
+        WHERE user_id = ${userId} AND folder_id IS NULL
+        ORDER BY created_at DESC
+      `
+      return media
+    }
+  },
+
+  delete: async (id: string, userId: string) => {
+    const media = await sql`
+      DELETE FROM media_assets 
+      WHERE id = ${id} AND user_id = ${userId}
+      RETURNING *
+    `
+    return media[0] || null
+  },
+}
+
+// Folder queries
+export const folderQueries = {
+  create: async (data: { user_id: string; name: string; parent_id?: string }) => {
+    const folders = await sql`
+      INSERT INTO media_folders (user_id, name, parent_id)
+      VALUES (${data.user_id}, ${data.name}, ${data.parent_id || null})
+      RETURNING *
+    `
+    return folders[0]
+  },
+
+  findByUser: async (userId: string, parentId?: string) => {
+    if (parentId) {
+      const folders = await sql`
+        SELECT * FROM media_folders 
+        WHERE user_id = ${userId} AND parent_id = ${parentId}
+        ORDER BY name ASC
+      `
+      return folders
+    } else {
+      const folders = await sql`
+        SELECT * FROM media_folders 
+        WHERE user_id = ${userId} AND parent_id IS NULL
+        ORDER BY name ASC
+      `
+      return folders
+    }
+  },
+
+  delete: async (id: string, userId: string) => {
+    const folders = await sql`
+      DELETE FROM media_folders 
+      WHERE id = ${id} AND user_id = ${userId}
+      RETURNING *
+    `
+    return folders[0] || null
   },
 }
