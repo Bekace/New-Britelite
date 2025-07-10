@@ -1,68 +1,29 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { authService } from "@/lib/auth"
+import { getCurrentUserFromRequest } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("Auth Me API: GET request received")
-
-    const cookieStore = await cookies()
-    const sessionToken = cookieStore.get("session")?.value
-
-    console.log("Auth Me API: Session token exists:", !!sessionToken)
-    console.log(
-      "Auth Me API: All cookies:",
-      cookieStore.getAll().map((c) => c.name),
-    )
-
-    if (!sessionToken) {
-      console.log("Auth Me API: No session token found")
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
-    }
-
-    console.log("Auth Me API: Verifying session...")
-    const user = await authService.verifySession(sessionToken)
+    const user = await getCurrentUserFromRequest(request)
 
     if (!user) {
-      console.log("Auth Me API: Session verification failed")
-      return NextResponse.json({ success: false, error: "Invalid session" }, { status: 401 })
+      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
     }
-
-    console.log("Auth Me API: User verified successfully:", {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-    })
 
     return NextResponse.json({
       success: true,
       user: {
         id: user.id,
         email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name,
+        firstName: user.first_name,
+        lastName: user.last_name,
         role: user.role,
-        is_email_verified: user.is_email_verified,
-        plan_id: user.plan_id,
-        plan_name: user.plan_name,
-        max_screens: user.max_screens,
-        max_storage_gb: user.max_storage_gb,
-        max_playlists: user.max_playlists,
-        business_name: user.business_name,
-        business_address: user.business_address,
-        phone: user.phone,
-        avatar_url: user.avatar_url,
+        businessName: user.business_name,
+        planName: user.plan_name,
+        isEmailVerified: user.is_email_verified,
       },
     })
   } catch (error) {
-    console.error("Auth Me API: Error:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Authentication check failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    )
+    console.error("Me API error:", error)
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
   }
 }

@@ -1,84 +1,67 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getCurrentUserFromRequest } from "@/lib/auth"
-import { executeQuery } from "@/lib/database"
+import { sql } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUserFromRequest(request)
+    console.log("Debug database API called")
 
-    if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
-      return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
+    const results = {
+      timestamp: new Date().toISOString(),
+      tables: {} as Record<string, any>,
+      errors: [] as string[],
     }
 
-    const debugInfo = {
-      timestamp: new Date().toISOString(),
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-      },
-      database: {
-        connected: true,
-        queries: [],
-      },
+    // Check tables exist
+    const tables = ["users", "sessions", "plans", "features", "audit_logs"]
+
+    for (const table of tables) {
+      try {
+        const result = await sql`
+          SELECT COUNT(*) as count, 
+                 (SELECT column_name FROM information_schema.columns 
+                  WHERE table_name = ${table} 
+                  ORDER BY ordinal_position) as sample_column
+          FROM ${sql(table)}
+        `
+        results.tables[table] = {
+          exists: true,
+          count: result[0]?.count || 0,
+          sample_column: result[0]?.sample_column,
+        }
+      } catch (error) {
+        results.tables[table] = {
+          exists: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        }
+        results.errors.push(`Table ${table}: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
     }
 
     // Test basic queries
     try {
-      const usersCount = await executeQuery("SELECT COUNT(*) as count FROM users")
-      debugInfo.database.queries.push({
-        query: "SELECT COUNT(*) as count FROM users",
-        result: usersCount,
-        success: true,
-      })
+      const userCount = await sql`SELECT COUNT(*) as count FROM users`
+      results.tables.users.total_users = userCount[0]?.count || 0
     } catch (error) {
-      debugInfo.database.queries.push({
-        query: "SELECT COUNT(*) as count FROM users",
-        error: error instanceof Error ? error.message : "Unknown error",
-        success: false,
-      })
+      results.errors.push(`User count query failed: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
 
     try {
-      const plansCount = await executeQuery("SELECT COUNT(*) as count FROM plans")
-      debugInfo.database.queries.push({
-        query: "SELECT COUNT(*) as count FROM plans",
-        result: plansCount,
-        success: true,
-      })
+      const planCount = await sql`SELECT COUNT(*) as count FROM plans`
+      results.tables.plans.total_plans = planCount[0]?.count || 0
     } catch (error) {
-      debugInfo.database.queries.push({
-        query: "SELECT COUNT(*) as count FROM plans",
-        error: error instanceof Error ? error.message : "Unknown error",
-        success: false,
-      })
-    }
-
-    try {
-      const sessionsCount = await executeQuery("SELECT COUNT(*) as count FROM sessions")
-      debugInfo.database.queries.push({
-        query: "SELECT COUNT(*) as count FROM sessions",
-        result: sessionsCount,
-        success: true,
-      })
-    } catch (error) {
-      debugInfo.database.queries.push({
-        query: "SELECT COUNT(*) as count FROM sessions",
-        error: error instanceof Error ? error.message : "Unknown error",
-        success: false,
-      })
+      results.errors.push(`Plan count query failed: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
 
     return NextResponse.json({
       success: true,
-      debug: debugInfo,
+      debug: results,
     })
   } catch (error) {
-    console.error("Database debug error:", error)
+    console.error("Debug database error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Debug failed",
+        error: "Database debug failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },
@@ -88,41 +71,28 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUserFromRequest(request)
-
-    if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
-      return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
-    }
-
     const { query, params = [] } = await request.json()
 
     if (!query) {
       return NextResponse.json({ success: false, error: "Query is required" }, { status: 400 })
     }
 
-    // Only allow safe queries (SELECT, UPDATE for specific operations)
-    const safeQuery = query.trim().toLowerCase()
-    if (!safeQuery.startsWith("select") && !safeQuery.startsWith("update users set role")) {
-      return NextResponse.json(
-        { success: false, error: "Only SELECT queries and role updates are allowed" },
-        { status: 400 },
-      )
-    }
+    console.log("Executing debug query:", query)
+    console.log("With params:", params)
 
-    const result = await executeQuery(query, params)
+    const result = await sql.unsafe(query, params)
 
     return NextResponse.json({
       success: true,
       result: result,
-      query: query,
-      params: params,
+      rowCount: result.length,
     })
   } catch (error) {
-    console.error("Database query error:", error)
+    console.error("Debug query error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Query failed",
+        error: "Query execution failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },

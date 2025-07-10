@@ -5,45 +5,30 @@ export async function GET(request: NextRequest) {
   try {
     const debugInfo = {
       timestamp: new Date().toISOString(),
-      cookies: {},
-      headers: {},
-      user: null,
-      session: null,
+      cookies: {} as Record<string, string>,
+      headers: {} as Record<string, string>,
+      user: null as any,
+      sessionToken: null as string | null,
     }
 
-    // Get all cookies
-    const cookieHeader = request.headers.get("cookie")
-    if (cookieHeader) {
-      cookieHeader.split(";").forEach((cookie) => {
-        const [name, value] = cookie.trim().split("=")
-        debugInfo.cookies[name] = value
-      })
-    }
+    // Get cookies
+    request.cookies.getAll().forEach((cookie) => {
+      debugInfo.cookies[cookie.name] = cookie.value
+    })
 
-    // Get relevant headers
-    debugInfo.headers = {
-      "user-agent": request.headers.get("user-agent"),
-      authorization: request.headers.get("authorization"),
-      cookie: request.headers.get("cookie"),
-      "x-forwarded-for": request.headers.get("x-forwarded-for"),
-      "x-real-ip": request.headers.get("x-real-ip"),
-    }
+    // Get headers
+    request.headers.forEach((value, key) => {
+      debugInfo.headers[key] = value
+    })
 
-    // Try to get current user
+    // Get session token
+    debugInfo.sessionToken = request.cookies.get("session")?.value || null
+
+    // Get user
     try {
-      const user = await getCurrentUserFromRequest(request)
-      debugInfo.user = user
-        ? {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            is_email_verified: user.is_email_verified,
-          }
-        : null
+      debugInfo.user = await getCurrentUserFromRequest(request)
     } catch (error) {
-      debugInfo.session = {
-        error: error instanceof Error ? error.message : "Unknown error",
-      }
+      debugInfo.user = { error: error instanceof Error ? error.message : "Unknown error" }
     }
 
     return NextResponse.json({
@@ -51,11 +36,11 @@ export async function GET(request: NextRequest) {
       debug: debugInfo,
     })
   } catch (error) {
-    console.error("Session debug error:", error)
+    console.error("Debug session error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Debug failed",
+        error: "Session debug failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },

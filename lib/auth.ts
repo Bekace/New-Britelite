@@ -1,286 +1,162 @@
 import { cookies } from "next/headers"
 import type { NextRequest } from "next/server"
+import { sessionQueries, userQueries, type User } from "@/lib/database"
 import bcrypt from "bcryptjs"
 import crypto from "crypto"
-import jwt from "jsonwebtoken"
-import { userQueries, sessionQueries, auditQueries } from "./database"
 
-if (!process.env.JWT_SECRET) {
-  throw new Error("JWT_SECRET environment variable is required")
-}
-
-const JWT_SECRET = process.env.JWT_SECRET
-const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 days
-
-export interface User {
-  id: string
-  email: string
-  first_name: string
-  last_name: string
-  role: "user" | "admin" | "super_admin"
-  is_email_verified: boolean
-  plan_id?: string
+export interface AuthUser extends User {
   plan_name?: string
   max_screens?: number
   max_storage_gb?: number
   max_playlists?: number
-  business_name?: string
-  business_address?: string
-  phone?: string
-  avatar_url?: string
-  is_active?: boolean
-  created_at?: string
-  updated_at?: string
-}
-
-export interface AuthResult {
-  success: boolean
-  user?: User
-  token?: string
-  message?: string
-  error?: string
-  verificationToken?: string
-}
-
-export const passwordUtils = {
-  hash: async (password: string): Promise<string> => {
-    return await bcrypt.hash(password, 12)
-  },
-
-  verify: async (password: string, hash: string): Promise<boolean> => {
-    return await bcrypt.compare(password, hash)
-  },
-
-  validate: (password: string): { valid: boolean; errors: string[] } => {
-    const errors: string[] = []
-
-    if (password.length < 8) {
-      errors.push("Password must be at least 8 characters long")
-    }
-    if (!/[A-Z]/.test(password)) {
-      errors.push("Password must contain at least one uppercase letter")
-    }
-    if (!/[a-z]/.test(password)) {
-      errors.push("Password must contain at least one lowercase letter")
-    }
-    if (!/\d/.test(password)) {
-      errors.push("Password must contain at least one number")
-    }
-
-    return { valid: errors.length === 0, errors }
-  },
-}
-
-export const tokenUtils = {
-  generateSessionToken: (): string => {
-    return crypto.randomBytes(32).toString("hex")
-  },
-
-  generateEmailToken: (): string => {
-    return crypto.randomBytes(32).toString("hex")
-  },
-
-  generateJWT: (payload: any): string => {
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" })
-  },
-
-  verifyJWT: (token: string): any => {
-    try {
-      return jwt.verify(token, JWT_SECRET)
-    } catch (error) {
-      return null
-    }
-  },
 }
 
 export const authService = {
-  register: async (data: {
-    email: string
-    password: string
-    first_name: string
-    last_name: string
-    business_name?: string
-  }): Promise<AuthResult> => {
-    try {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(data.email)) {
-        return { success: false, error: "Invalid email format" }
-      }
-
-      const passwordValidation = passwordUtils.validate(data.password)
-      if (!passwordValidation.valid) {
-        return { success: false, error: passwordValidation.errors.join(", ") }
-      }
-
-      const existingUser = await userQueries.findByEmail(data.email)
-      if (existingUser) {
-        return { success: false, error: "User with this email already exists" }
-      }
-
-      const passwordHash = await passwordUtils.hash(data.password)
-      const emailVerificationToken = tokenUtils.generateEmailToken()
-
-      const user = await userQueries.create({
-        email: data.email,
-        password_hash: passwordHash,
-        first_name: data.first_name,
-        last_name: data.last_name,
-        business_name: data.business_name,
-        email_verification_token: emailVerificationToken,
-      })
-
-      await auditQueries.log({
-        user_id: user.id,
-        action: "user_registered",
-        details: { email: data.email },
-      })
-
-      return {
-        success: true,
-        user: user as User,
-        verificationToken: emailVerificationToken,
-        message: "Registration successful. Please check your email to verify your account.",
-      }
-    } catch (error) {
-      console.error("Registration error:", error)
-      return { success: false, error: "Registration failed. Please try again." }
-    }
+  async hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, 12)
   },
 
-  login: async (email: string, password: string): Promise<AuthResult> => {
-    try {
-      const user = await userQueries.findByEmail(email)
-      if (!user) {
-        return { success: false, error: "Invalid email or password" }
-      }
-
-      const isValidPassword = await passwordUtils.verify(password, user.password_hash)
-      if (!isValidPassword) {
-        return { success: false, error: "Invalid email or password" }
-      }
-
-      const sessionToken = tokenUtils.generateSessionToken()
-      const expiresAt = new Date(Date.now() + SESSION_DURATION)
-
-      await sessionQueries.create(user.id, sessionToken, expiresAt)
-
-      const {
-        password_hash,
-        email_verification_token,
-        password_reset_token,
-        password_reset_expires,
-        ...userWithoutSensitiveData
-      } = user
-
-      return {
-        success: true,
-        user: userWithoutSensitiveData as User,
-        token: sessionToken,
-        message: "Login successful",
-      }
-    } catch (error) {
-      console.error("Login error:", error)
-      return { success: false, error: "Login failed. Please try again." }
-    }
+  async verifyPassword(password: string, hash: string): Promise<boolean> {
+    return bcrypt.compare(password, hash)
   },
 
-  verifyEmail: async (token: string): Promise<AuthResult> => {
-    try {
-      if (!token) {
-        return { success: false, error: "Verification token is required" }
-      }
-
-      const user = await userQueries.updateEmailVerification(token)
-      if (!user) {
-        return { success: false, error: "Invalid or expired verification token" }
-      }
-
-      await auditQueries.log({
-        user_id: user.id,
-        action: "email_verified",
-        details: { email: user.email },
-      })
-
-      return {
-        success: true,
-        message: "Email verified successfully! You can now sign in to your account.",
-      }
-    } catch (error) {
-      console.error("Email verification error:", error)
-      return { success: false, error: "Email verification failed. Please try again." }
-    }
+  generateToken(): string {
+    return crypto.randomBytes(32).toString("hex")
   },
 
-  requestPasswordReset: async (email: string): Promise<AuthResult> => {
-    try {
-      const user = await userQueries.findByEmail(email)
-      if (!user) {
-        return { success: true, message: "If an account exists, a reset link has been sent." }
-      }
-
-      const resetToken = tokenUtils.generateEmailToken()
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
-
-      await userQueries.setPasswordResetToken(email, resetToken, expiresAt)
-
-      await auditQueries.log({
-        user_id: user.id,
-        action: "password_reset_requested",
-        details: { email },
-      })
-
-      return { success: true, message: "Password reset link sent to your email." }
-    } catch (error) {
-      console.error("Password reset request error:", error)
-      return { success: false, error: "Failed to process password reset request." }
-    }
+  generateVerificationToken(): string {
+    return crypto.randomBytes(32).toString("hex")
   },
 
-  logout: async (sessionToken: string): Promise<void> => {
-    try {
-      await sessionQueries.delete(sessionToken)
-    } catch (error) {
-      console.error("Logout error:", error)
-    }
+  async createSession(userId: string): Promise<string> {
+    const token = this.generateToken()
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+
+    await sessionQueries.create(userId, token, expiresAt)
+    return token
   },
 
-  verifySession: async (sessionToken: string): Promise<User | null> => {
+  async verifySession(token: string): Promise<AuthUser | null> {
     try {
-      const session = await sessionQueries.findByToken(sessionToken)
-      if (!session) {
-        return null
-      }
-
-      const { password_hash, email_verification_token, password_reset_token, password_reset_expires, ...user } = session
-      return user as User
+      const session = await sessionQueries.findByToken(token)
+      return session || null
     } catch (error) {
       console.error("Session verification error:", error)
       return null
     }
   },
+
+  async deleteSession(token: string): Promise<void> {
+    await sessionQueries.delete(token)
+  },
+
+  async login(email: string, password: string): Promise<{ user: AuthUser; token: string } | null> {
+    try {
+      const user = await userQueries.findByEmail(email)
+      if (!user || !user.is_email_verified) {
+        return null
+      }
+
+      const isValidPassword = await this.verifyPassword(password, user.password_hash)
+      if (!isValidPassword) {
+        return null
+      }
+
+      const token = await this.createSession(user.id)
+      return { user, token }
+    } catch (error) {
+      console.error("Login error:", error)
+      return null
+    }
+  },
+
+  async register(userData: {
+    email: string
+    password: string
+    firstName: string
+    lastName: string
+    businessName?: string
+  }): Promise<User | null> {
+    try {
+      const existingUser = await userQueries.findByEmail(userData.email)
+      if (existingUser) {
+        throw new Error("User already exists")
+      }
+
+      const passwordHash = await this.hashPassword(userData.password)
+      const verificationToken = this.generateVerificationToken()
+
+      const user = await userQueries.create({
+        email: userData.email,
+        password_hash: passwordHash,
+        first_name: userData.firstName,
+        last_name: userData.lastName,
+        business_name: userData.businessName,
+        email_verification_token: verificationToken,
+      })
+
+      return user
+    } catch (error) {
+      console.error("Registration error:", error)
+      return null
+    }
+  },
+
+  async verifyEmail(token: string): Promise<User | null> {
+    try {
+      return await userQueries.updateEmailVerification(token)
+    } catch (error) {
+      console.error("Email verification error:", error)
+      return null
+    }
+  },
+
+  async requestPasswordReset(email: string): Promise<string | null> {
+    try {
+      const user = await userQueries.findByEmail(email)
+      if (!user) {
+        return null
+      }
+
+      const resetToken = this.generateToken()
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+      await userQueries.setPasswordResetToken(email, resetToken, expiresAt)
+      return resetToken
+    } catch (error) {
+      console.error("Password reset request error:", error)
+      return null
+    }
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<User | null> {
+    try {
+      const passwordHash = await this.hashPassword(newPassword)
+      return await userQueries.resetPassword(token, passwordHash)
+    } catch (error) {
+      console.error("Password reset error:", error)
+      return null
+    }
+  },
 }
 
-export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
-  return await passwordUtils.verify(password, hash)
+export async function getCurrentUserFromRequest(request: NextRequest): Promise<AuthUser | null> {
+  try {
+    const cookieStore = request.cookies
+    const sessionToken = cookieStore.get("session")?.value
+
+    if (!sessionToken) {
+      return null
+    }
+
+    return await authService.verifySession(sessionToken)
+  } catch (error) {
+    console.error("Get current user error:", error)
+    return null
+  }
 }
 
-export const hashPassword = async (password: string): Promise<string> => {
-  return await bcrypt.hash(password, 12)
-}
-
-export const generateToken = (): string => {
-  return crypto.randomBytes(32).toString("hex")
-}
-
-export const requireAuth = async (request: NextRequest): Promise<User | null> => {
-  return await getCurrentUserFromRequest(request)
-}
-
-export const requireAdmin = (user: User | null): boolean => {
-  return user?.role === "admin" || user?.role === "super_admin"
-}
-
-export const getCurrentUser = async (): Promise<User | null> => {
+export async function getCurrentUser(): Promise<AuthUser | null> {
   try {
     const cookieStore = await cookies()
     const sessionToken = cookieStore.get("session")?.value
@@ -289,36 +165,25 @@ export const getCurrentUser = async (): Promise<User | null> => {
       return null
     }
 
-    const session = await sessionQueries.findByToken(sessionToken)
-    if (!session) {
-      return null
-    }
-
-    const { password_hash, email_verification_token, password_reset_token, password_reset_expires, ...user } = session
-    return user as User
+    return await authService.verifySession(sessionToken)
   } catch (error) {
     console.error("Get current user error:", error)
     return null
   }
 }
 
-export const getCurrentUserFromRequest = async (request: NextRequest): Promise<User | null> => {
-  try {
-    const sessionToken = request.cookies.get("session")?.value
-
-    if (!sessionToken) {
-      return null
-    }
-
-    const session = await sessionQueries.findByToken(sessionToken)
-    if (!session) {
-      return null
-    }
-
-    const { password_hash, email_verification_token, password_reset_token, password_reset_expires, ...user } = session
-    return user as User
-  } catch (error) {
-    console.error("Get current user from request error:", error)
-    return null
+export async function requireAuth(): Promise<AuthUser> {
+  const user = await getCurrentUser()
+  if (!user) {
+    throw new Error("Authentication required")
   }
+  return user
+}
+
+export async function requireAdmin(): Promise<AuthUser> {
+  const user = await requireAuth()
+  if (user.role !== "admin" && user.role !== "super_admin") {
+    throw new Error("Admin access required")
+  }
+  return user
 }
