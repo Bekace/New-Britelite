@@ -21,10 +21,17 @@ const ALLOWED_TYPES = {
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("Upload API - Starting request")
+
     const user = await getUserFromSession(request)
+    console.log("Upload API - User from session:", !!user)
+
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      console.log("Upload API - No user found, returning 401")
+      return NextResponse.json({ error: "Unauthorized - No valid session found" }, { status: 401 })
     }
+
+    console.log("Upload API - Processing file upload for user:", user.id)
 
     const formData = await request.formData()
     const file = formData.get("file") as File
@@ -32,6 +39,12 @@ export async function POST(request: NextRequest) {
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
+
+    console.log("Upload API - File details:", {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    })
 
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
@@ -50,10 +63,14 @@ export async function POST(request: NextRequest) {
     const extension = file.name.split(".").pop()
     const filename = `${timestamp}-${randomString}.${extension}`
 
+    console.log("Upload API - Generated filename:", filename)
+
     // Upload to Vercel Blob
     const blob = await put(filename, file, {
       access: "public",
     })
+
+    console.log("Upload API - Blob uploaded:", blob.url)
 
     let thumbnailUrl: string | null = null
     let width: number | null = null
@@ -83,6 +100,7 @@ export async function POST(request: NextRequest) {
         })
 
         thumbnailUrl = thumbnailBlob.url
+        console.log("Upload API - Thumbnail generated:", thumbnailUrl)
       } catch (error) {
         console.error("Error generating thumbnail:", error)
         // Continue without thumbnail if generation fails
@@ -117,6 +135,8 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `
 
+    console.log("Upload API - File saved to database:", result[0].id)
+
     return NextResponse.json({
       success: true,
       file: result[0],
@@ -124,6 +144,12 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error("Upload error:", error)
-    return NextResponse.json({ error: "Failed to upload file" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Failed to upload file",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }

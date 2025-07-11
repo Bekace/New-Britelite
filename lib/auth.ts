@@ -266,11 +266,29 @@ export const authService = {
 
 export const getUserFromSession = async (request: NextRequest): Promise<User | null> => {
   try {
-    const sessionToken = request.cookies.get("session-token")?.value
+    // Try multiple cookie names to find the session token
+    const sessionToken =
+      request.cookies.get("session-token")?.value ||
+      request.cookies.get("session_token")?.value ||
+      request.cookies.get("sessionToken")?.value ||
+      request.cookies.get("auth-token")?.value ||
+      request.cookies.get("token")?.value
+
+    console.log(
+      "getUserFromSession - Available cookies:",
+      request.cookies.getAll().map((c) => c.name),
+    )
+    console.log("getUserFromSession - Session token found:", !!sessionToken)
+
     if (!sessionToken) {
+      console.log("getUserFromSession - No session token found")
       return null
     }
-    return await authService.verifySession(sessionToken)
+
+    const user = await authService.verifySession(sessionToken)
+    console.log("getUserFromSession - User verified:", !!user)
+
+    return user
   } catch (error) {
     console.error("Error getting user from session:", error)
     return null
