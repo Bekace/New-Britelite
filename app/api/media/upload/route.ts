@@ -13,10 +13,48 @@ const ALLOWED_TYPES = {
   "video/mp4": "video",
   "video/webm": "video",
   "video/quicktime": "video",
+  "video/avi": "video",
+  "video/mov": "video",
   "application/pdf": "document",
   "application/msword": "document",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
   "text/plain": "document",
+}
+
+// Function to generate video thumbnail using canvas
+async function generateVideoThumbnail(videoBuffer: Buffer): Promise<Buffer | null> {
+  try {
+    // For video thumbnails, we'll create a simple placeholder image
+    // In a real implementation, you'd use ffmpeg or similar
+    const thumbnailBuffer = await sharp({
+      create: {
+        width: 300,
+        height: 300,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0.8 },
+      },
+    })
+      .composite([
+        {
+          input: Buffer.from(`
+          <svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">
+            <rect width="300" height="300" fill="#1f2937"/>
+            <circle cx="150" cy="150" r="40" fill="white" opacity="0.9"/>
+            <polygon points="135,130 135,170 175,150" fill="#1f2937"/>
+          </svg>
+        `),
+          top: 0,
+          left: 0,
+        },
+      ])
+      .png()
+      .toBuffer()
+
+    return thumbnailBuffer
+  } catch (error) {
+    console.error("Error generating video thumbnail:", error)
+    return null
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -75,8 +113,9 @@ export async function POST(request: NextRequest) {
     let thumbnailUrl: string | null = null
     let width: number | null = null
     let height: number | null = null
+    let duration: number | null = null
 
-    // Generate thumbnail for images
+    // Generate thumbnail based on file type
     if (fileType === "image") {
       try {
         const buffer = await file.arrayBuffer()
@@ -100,10 +139,36 @@ export async function POST(request: NextRequest) {
         })
 
         thumbnailUrl = thumbnailBlob.url
-        console.log("Upload API - Thumbnail generated:", thumbnailUrl)
+        console.log("Upload API - Image thumbnail generated:", thumbnailUrl)
       } catch (error) {
-        console.error("Error generating thumbnail:", error)
-        // Continue without thumbnail if generation fails
+        console.error("Error generating image thumbnail:", error)
+      }
+    } else if (fileType === "video") {
+      try {
+        const buffer = await file.arrayBuffer()
+        const videoBuffer = Buffer.from(buffer)
+
+        // Generate video thumbnail with play button
+        const thumbnailBuffer = await generateVideoThumbnail(videoBuffer)
+
+        if (thumbnailBuffer) {
+          const thumbnailFilename = `thumb-${filename.replace(/\.[^/.]+$/, ".png")}`
+          const thumbnailBlob = await put(thumbnailFilename, thumbnailBuffer, {
+            access: "public",
+            contentType: "image/png",
+          })
+
+          thumbnailUrl = thumbnailBlob.url
+          console.log("Upload API - Video thumbnail generated:", thumbnailUrl)
+        }
+
+        // For video dimensions and duration, we'd normally use ffprobe
+        // For now, we'll set some default values
+        width = 1920
+        height = 1080
+        duration = 0 // Duration in seconds - would be extracted with ffmpeg
+      } catch (error) {
+        console.error("Error processing video:", error)
       }
     }
 
@@ -119,7 +184,8 @@ export async function POST(request: NextRequest) {
         blob_url,
         thumbnail_url,
         width,
-        height
+        height,
+        duration
       ) VALUES (
         ${user.id},
         ${filename},
@@ -130,7 +196,8 @@ export async function POST(request: NextRequest) {
         ${blob.url},
         ${thumbnailUrl},
         ${width},
-        ${height}
+        ${height},
+        ${duration}
       )
       RETURNING *
     `

@@ -30,7 +30,20 @@ import {
 } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
 import { toast } from "@/hooks/use-toast"
-import { Upload, Search, Grid, List, Download, Trash2, Eye, FileImage, FileVideo, FileText, Filter } from "lucide-react"
+import {
+  Upload,
+  Search,
+  Grid,
+  List,
+  Download,
+  Trash2,
+  Eye,
+  FileImage,
+  FileVideo,
+  FileText,
+  Filter,
+  Play,
+} from "lucide-react"
 
 interface MediaFile {
   id: string
@@ -213,6 +226,13 @@ export default function MediaPage() {
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
+  const formatDuration = (seconds: number) => {
+    if (!seconds) return "Unknown"
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, "0")}`
+  }
+
   const getFileIcon = (fileType: string) => {
     switch (fileType) {
       case "image":
@@ -221,6 +241,50 @@ export default function MediaPage() {
         return <FileVideo className="h-4 w-4" />
       default:
         return <FileText className="h-4 w-4" />
+    }
+  }
+
+  const renderThumbnail = (file: MediaFile, size: "small" | "large" = "small") => {
+    const containerClass = size === "small" ? "w-full h-full" : "max-h-96 overflow-hidden rounded-lg"
+
+    if (file.file_type === "image") {
+      return (
+        <img
+          src={file.thumbnail_url || file.blob_url || "/placeholder.svg"}
+          alt={file.original_filename}
+          className={`${containerClass} object-cover`}
+        />
+      )
+    } else if (file.file_type === "video") {
+      return (
+        <div className={`${containerClass} relative bg-black flex items-center justify-center`}>
+          {file.thumbnail_url ? (
+            <img
+              src={file.thumbnail_url || "/placeholder.svg"}
+              alt={file.original_filename}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full bg-gray-800 flex items-center justify-center">
+              <div className="text-center">
+                <Play className="h-8 w-8 mx-auto mb-2 text-white" />
+                <FileVideo className="h-6 w-6 mx-auto text-white" />
+              </div>
+            </div>
+          )}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-black bg-opacity-50 rounded-full p-3">
+              <Play className="h-6 w-6 text-white fill-white" />
+            </div>
+          </div>
+        </div>
+      )
+    } else {
+      return (
+        <div className={`${containerClass} flex items-center justify-center bg-muted`}>
+          {getFileIcon(file.file_type)}
+        </div>
+      )
     }
   }
 
@@ -353,17 +417,7 @@ export default function MediaPage() {
                 {viewMode === "grid" ? (
                   <div className="space-y-3">
                     <div className="aspect-square bg-muted rounded-lg overflow-hidden">
-                      {file.file_type === "image" && file.thumbnail_url ? (
-                        <img
-                          src={file.thumbnail_url || "/placeholder.svg"}
-                          alt={file.original_filename}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          {getFileIcon(file.file_type)}
-                        </div>
-                      )}
+                      {renderThumbnail(file, "small")}
                     </div>
 
                     <div className="space-y-2">
@@ -372,6 +426,9 @@ export default function MediaPage() {
                           {file.file_type}
                         </Badge>
                         <span className="text-xs text-muted-foreground">{formatFileSize(file.file_size)}</span>
+                        {file.file_type === "video" && file.duration && (
+                          <span className="text-xs text-muted-foreground">{formatDuration(file.duration)}</span>
+                        )}
                       </div>
 
                       <h4 className="font-medium text-sm truncate" title={file.original_filename}>
@@ -419,6 +476,23 @@ export default function MediaPage() {
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete File</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete "{file.original_filename}"? This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDeleteFile(file)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
                       </AlertDialog>
                     </div>
                   </div>
@@ -426,15 +500,7 @@ export default function MediaPage() {
                   <>
                     <div className="flex-shrink-0">
                       <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden flex items-center justify-center">
-                        {file.file_type === "image" && file.thumbnail_url ? (
-                          <img
-                            src={file.thumbnail_url || "/placeholder.svg"}
-                            alt={file.original_filename}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          getFileIcon(file.file_type)
-                        )}
+                        {renderThumbnail(file, "small")}
                       </div>
                     </div>
 
@@ -448,6 +514,7 @@ export default function MediaPage() {
 
                       <p className="text-sm text-muted-foreground mb-2">
                         {formatFileSize(file.file_size)} • {new Date(file.created_at).toLocaleDateString()}
+                        {file.file_type === "video" && file.duration && <> • {formatDuration(file.duration)}</>}
                       </p>
 
                       {file.description && (
@@ -457,7 +524,7 @@ export default function MediaPage() {
                       {file.tags && file.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {file.tags.map((tag, index) => (
-                            <Badge key={index} variant="outline" className="text-xs">
+                            <Badge key={index} variant="outline">
                               {tag}
                             </Badge>
                           ))}
@@ -486,6 +553,23 @@ export default function MediaPage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete File</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete "{file.original_filename}"? This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDeleteFile(file)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
                       </AlertDialog>
                     </div>
                   </>
@@ -510,6 +594,9 @@ export default function MediaPage() {
                     • {selectedFile.width} × {selectedFile.height}
                   </>
                 )}
+                {selectedFile.file_type === "video" && selectedFile.duration && (
+                  <> • {formatDuration(selectedFile.duration)}</>
+                )}
               </DialogDescription>
             </DialogHeader>
 
@@ -523,7 +610,7 @@ export default function MediaPage() {
                   />
                 </div>
               ) : selectedFile.file_type === "video" ? (
-                <video src={selectedFile.blob_url} controls className="w-full max-h-96 rounded-lg">
+                <video src={selectedFile.blob_url} controls autoPlay muted className="w-full max-h-96 rounded-lg">
                   Your browser does not support the video tag.
                 </video>
               ) : (
