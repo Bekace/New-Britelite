@@ -43,6 +43,7 @@ import {
   FileText,
   Filter,
   Play,
+  File,
 } from "lucide-react"
 
 interface MediaFile {
@@ -233,15 +234,38 @@ export default function MediaPage() {
     return `${mins}:${secs.toString().padStart(2, "0")}`
   }
 
-  const getFileIcon = (fileType: string) => {
+  const getFileIcon = (fileType: string, mimeType?: string) => {
     switch (fileType) {
       case "image":
         return <FileImage className="h-4 w-4" />
       case "video":
         return <FileVideo className="h-4 w-4" />
+      case "document":
+        // Return specific icons based on document type
+        if (mimeType?.includes("pdf")) {
+          return <File className="h-4 w-4 text-red-600" />
+        } else if (mimeType?.includes("word") || mimeType?.includes("msword")) {
+          return <File className="h-4 w-4 text-blue-600" />
+        } else if (mimeType?.includes("excel") || mimeType?.includes("spreadsheet")) {
+          return <File className="h-4 w-4 text-green-600" />
+        } else if (mimeType?.includes("powerpoint") || mimeType?.includes("presentation")) {
+          return <File className="h-4 w-4 text-orange-600" />
+        } else {
+          return <FileText className="h-4 w-4" />
+        }
       default:
         return <FileText className="h-4 w-4" />
     }
+  }
+
+  const getDocumentTypeName = (mimeType: string) => {
+    if (mimeType.includes("pdf")) return "PDF"
+    if (mimeType.includes("word") || mimeType.includes("msword")) return "Word"
+    if (mimeType.includes("excel") || mimeType.includes("spreadsheet")) return "Excel"
+    if (mimeType.includes("powerpoint") || mimeType.includes("presentation")) return "PowerPoint"
+    if (mimeType.includes("text/plain")) return "Text"
+    if (mimeType.includes("csv")) return "CSV"
+    return "Document"
   }
 
   const renderThumbnail = (file: MediaFile, size: "small" | "large" = "small") => {
@@ -279,10 +303,27 @@ export default function MediaPage() {
           </div>
         </div>
       )
+    } else if (file.file_type === "document") {
+      return (
+        <div className={`${containerClass} flex items-center justify-center`}>
+          {file.thumbnail_url ? (
+            <img
+              src={file.thumbnail_url || "/placeholder.svg"}
+              alt={file.original_filename}
+              className="w-full h-full object-contain"
+            />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100">
+              {getFileIcon(file.file_type, file.mime_type)}
+              <span className="text-xs mt-1 font-medium">{getDocumentTypeName(file.mime_type)}</span>
+            </div>
+          )}
+        </div>
+      )
     } else {
       return (
         <div className={`${containerClass} flex items-center justify-center bg-muted`}>
-          {getFileIcon(file.file_type)}
+          {getFileIcon(file.file_type, file.mime_type)}
         </div>
       )
     }
@@ -325,7 +366,9 @@ export default function MediaPage() {
             <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <div className="space-y-2">
               <p className="text-lg font-medium">Drop files here to upload</p>
-              <p className="text-sm text-muted-foreground">Supports images, videos, and documents</p>
+              <p className="text-sm text-muted-foreground">
+                Supports images, videos, and documents (PDF, Word, Excel, PowerPoint)
+              </p>
               <Button variant="outline" disabled={uploading} onClick={handleBrowseClick}>
                 {uploading ? "Uploading..." : "Browse Files"}
               </Button>
@@ -333,7 +376,7 @@ export default function MediaPage() {
                 id="file-upload"
                 type="file"
                 multiple
-                accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf"
                 onChange={handleFileUpload}
                 className="hidden"
                 disabled={uploading}
@@ -423,7 +466,7 @@ export default function MediaPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className="text-xs">
-                          {file.file_type}
+                          {file.file_type === "document" ? getDocumentTypeName(file.mime_type) : file.file_type}
                         </Badge>
                         <span className="text-xs text-muted-foreground">{formatFileSize(file.file_size)}</span>
                         {file.file_type === "video" && file.duration && (
@@ -508,7 +551,7 @@ export default function MediaPage() {
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="font-medium truncate">{file.original_filename}</h4>
                         <Badge variant="secondary" className="text-xs">
-                          {file.file_type}
+                          {file.file_type === "document" ? getDocumentTypeName(file.mime_type) : file.file_type}
                         </Badge>
                       </div>
 
@@ -587,8 +630,11 @@ export default function MediaPage() {
             <DialogHeader>
               <DialogTitle>{selectedFile.original_filename}</DialogTitle>
               <DialogDescription>
-                {selectedFile.file_type} • {formatFileSize(selectedFile.file_size)}
-                {selectedFile.width && selectedFile.height && (
+                {selectedFile.file_type === "document"
+                  ? getDocumentTypeName(selectedFile.mime_type)
+                  : selectedFile.file_type}{" "}
+                • {formatFileSize(selectedFile.file_size)}
+                {selectedFile.width && selectedFile.height && selectedFile.file_type !== "document" && (
                   <>
                     {" "}
                     • {selectedFile.width} × {selectedFile.height}
@@ -613,9 +659,35 @@ export default function MediaPage() {
                 <video src={selectedFile.blob_url} controls autoPlay muted className="w-full max-h-96 rounded-lg">
                   Your browser does not support the video tag.
                 </video>
+              ) : selectedFile.file_type === "document" ? (
+                <div className="flex flex-col items-center justify-center h-64 bg-muted rounded-lg">
+                  <div className="text-center">
+                    {selectedFile.thumbnail_url ? (
+                      <img
+                        src={selectedFile.thumbnail_url || "/placeholder.svg"}
+                        alt={selectedFile.original_filename}
+                        className="w-32 h-32 object-contain mx-auto mb-4"
+                      />
+                    ) : (
+                      <div className="w-32 h-32 flex flex-col items-center justify-center mx-auto mb-4 bg-white rounded-lg shadow-sm">
+                        {getFileIcon(selectedFile.file_type, selectedFile.mime_type)}
+                        <span className="text-sm font-medium mt-2">{getDocumentTypeName(selectedFile.mime_type)}</span>
+                      </div>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Document preview not available. Click download to view the file.
+                    </p>
+                    <Button variant="outline" className="mt-4 bg-transparent" asChild>
+                      <a href={selectedFile.blob_url} download={selectedFile.original_filename}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download to View
+                      </a>
+                    </Button>
+                  </div>
+                </div>
               ) : (
                 <div className="flex items-center justify-center h-32 bg-muted rounded-lg">
-                  {getFileIcon(selectedFile.file_type)}
+                  {getFileIcon(selectedFile.file_type, selectedFile.mime_type)}
                   <span className="ml-2">Preview not available</span>
                 </div>
               )}

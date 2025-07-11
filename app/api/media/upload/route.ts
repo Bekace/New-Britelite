@@ -18,7 +18,13 @@ const ALLOWED_TYPES = {
   "application/pdf": "document",
   "application/msword": "document",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
+  "application/vnd.ms-excel": "document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "document",
+  "application/vnd.ms-powerpoint": "document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "document",
   "text/plain": "document",
+  "text/csv": "document",
+  "application/rtf": "document",
 }
 
 // Function to generate video thumbnail using canvas
@@ -53,6 +59,107 @@ async function generateVideoThumbnail(videoBuffer: Buffer): Promise<Buffer | nul
     return thumbnailBuffer
   } catch (error) {
     console.error("Error generating video thumbnail:", error)
+    return null
+  }
+}
+
+// Function to generate document thumbnail based on file type
+async function generateDocumentThumbnail(mimeType: string): Promise<Buffer | null> {
+  try {
+    let iconSvg = ""
+    let backgroundColor = "#f3f4f6"
+    let iconColor = "#6b7280"
+
+    // Determine icon and colors based on document type
+    if (mimeType === "application/pdf") {
+      backgroundColor = "#dc2626"
+      iconColor = "white"
+      iconSvg = `
+        <text x="150" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="${iconColor}">PDF</text>
+        <rect x="100" y="140" width="100" height="80" fill="none" stroke="${iconColor}" stroke-width="2" rx="4"/>
+        <line x1="110" y1="155" x2="180" y2="155" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="110" y1="170" x2="180" y2="170" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="110" y1="185" x2="160" y2="185" stroke="${iconColor}" stroke-width="1"/>
+      `
+    } else if (mimeType.includes("word") || mimeType.includes("msword")) {
+      backgroundColor = "#2563eb"
+      iconColor = "white"
+      iconSvg = `
+        <text x="150" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="${iconColor}">DOC</text>
+        <rect x="100" y="140" width="100" height="80" fill="none" stroke="${iconColor}" stroke-width="2" rx="4"/>
+        <line x1="110" y1="155" x2="180" y2="155" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="110" y1="170" x2="180" y2="170" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="110" y1="185" x2="160" y2="185" stroke="${iconColor}" stroke-width="1"/>
+      `
+    } else if (mimeType.includes("excel") || mimeType.includes("spreadsheet")) {
+      backgroundColor = "#16a34a"
+      iconColor = "white"
+      iconSvg = `
+        <text x="150" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="${iconColor}">XLS</text>
+        <rect x="100" y="140" width="100" height="80" fill="none" stroke="${iconColor}" stroke-width="2" rx="4"/>
+        <line x1="125" y1="140" x2="125" y2="220" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="175" y1="140" x2="175" y2="220" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="100" y1="165" x2="200" y2="165" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="100" y1="190" x2="200" y2="190" stroke="${iconColor}" stroke-width="1"/>
+      `
+    } else if (mimeType.includes("powerpoint") || mimeType.includes("presentation")) {
+      backgroundColor = "#ea580c"
+      iconColor = "white"
+      iconSvg = `
+        <text x="150" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="${iconColor}">PPT</text>
+        <rect x="100" y="140" width="100" height="80" fill="none" stroke="${iconColor}" stroke-width="2" rx="4"/>
+        <rect x="110" y="150" width="30" height="20" fill="${iconColor}" opacity="0.3"/>
+        <rect x="150" y="150" width="40" height="15" fill="${iconColor}" opacity="0.3"/>
+        <rect x="110" y="180" width="50" height="15" fill="${iconColor}" opacity="0.3"/>
+        <rect x="110" y="200" width="35" height="10" fill="${iconColor}" opacity="0.3"/>
+      `
+    } else if (mimeType === "text/plain") {
+      backgroundColor = "#64748b"
+      iconColor = "white"
+      iconSvg = `
+        <text x="150" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="${iconColor}">TXT</text>
+        <rect x="100" y="140" width="100" height="80" fill="none" stroke="${iconColor}" stroke-width="2" rx="4"/>
+        <line x1="110" y1="155" x2="180" y2="155" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="110" y1="170" x2="180" y2="170" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="110" y1="185" x2="160" y2="185" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="110" y1="200" x2="170" y2="200" stroke="${iconColor}" stroke-width="1"/>
+      `
+    } else {
+      // Generic document icon
+      iconSvg = `
+        <text x="150" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="${iconColor}">DOC</text>
+        <rect x="100" y="140" width="100" height="80" fill="none" stroke="${iconColor}" stroke-width="2" rx="4"/>
+        <line x1="110" y1="155" x2="180" y2="155" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="110" y1="170" x2="180" y2="170" stroke="${iconColor}" stroke-width="1"/>
+        <line x1="110" y1="185" x2="160" y2="185" stroke="${iconColor}" stroke-width="1"/>
+      `
+    }
+
+    const thumbnailBuffer = await sharp({
+      create: {
+        width: 300,
+        height: 300,
+        channels: 4,
+        background: backgroundColor,
+      },
+    })
+      .composite([
+        {
+          input: Buffer.from(`
+          <svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">
+            ${iconSvg}
+          </svg>
+        `),
+          top: 0,
+          left: 0,
+        },
+      ])
+      .png()
+      .toBuffer()
+
+    return thumbnailBuffer
+  } catch (error) {
+    console.error("Error generating document thumbnail:", error)
     return null
   }
 }
@@ -169,6 +276,28 @@ export async function POST(request: NextRequest) {
         duration = 0 // Duration in seconds - would be extracted with ffmpeg
       } catch (error) {
         console.error("Error processing video:", error)
+      }
+    } else if (fileType === "document") {
+      try {
+        // Generate document thumbnail based on MIME type
+        const thumbnailBuffer = await generateDocumentThumbnail(file.type)
+
+        if (thumbnailBuffer) {
+          const thumbnailFilename = `thumb-${filename.replace(/\.[^/.]+$/, ".png")}`
+          const thumbnailBlob = await put(thumbnailFilename, thumbnailBuffer, {
+            access: "public",
+            contentType: "image/png",
+          })
+
+          thumbnailUrl = thumbnailBlob.url
+          console.log("Upload API - Document thumbnail generated:", thumbnailUrl)
+        }
+
+        // Set standard document dimensions
+        width = 210 // A4 width in mm (for reference)
+        height = 297 // A4 height in mm (for reference)
+      } catch (error) {
+        console.error("Error processing document:", error)
       }
     }
 
