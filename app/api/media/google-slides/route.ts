@@ -10,16 +10,26 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { url } = body
+    const { url, folderId } = body
 
     if (!url || !url.includes("docs.google.com/presentation")) {
       return NextResponse.json({ error: "Invalid Google Slides URL" }, { status: 400 })
     }
 
-    // Extract presentation ID from various Google Slides URL formats
-    let presentationId = ""
+    // If folder_id is provided, verify it belongs to the user
+    if (folderId && folderId !== "null") {
+      const folder = await sql`
+        SELECT id FROM folders 
+        WHERE id = ${folderId} AND user_id = ${user.id} AND is_active = true
+      `
 
-    // Handle different URL formats
+      if (folder.length === 0) {
+        return NextResponse.json({ error: "Folder not found" }, { status: 404 })
+      }
+    }
+
+    // Extract presentation ID from URL
+    let presentationId = ""
     const patterns = [
       /\/presentation\/d\/([a-zA-Z0-9-_]+)/,
       /\/presentation\/d\/([a-zA-Z0-9-_]+)\/edit/,
@@ -38,52 +48,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Could not extract presentation ID from URL" }, { status: 400 })
     }
 
-    // Create embed URL without toolbar
+    // Generate embed URL with minimal toolbar
     const embedUrl = `https://docs.google.com/presentation/d/${presentationId}/embed?start=false&loop=false&delayms=3000&rm=minimal`
 
-    // Generate filename from URL or use default
-    const filename = `google-slides-${presentationId}`
-    const originalFilename = `Google Slides Presentation`
+    // Extract title from URL or use default
+    let title = "Google Slides Presentation"
+    try {
+      // Try to extract title from URL parameters or use default
+      const urlObj = new URL(url)
+      const titleMatch = url.match(/\/presentation\/d\/[^/]+\/edit#slide=id\.([^&]+)/)
+      if (titleMatch) {
+        title = `Google Slides - ${titleMatch[1]}`
+      }
+    } catch (error) {
+      // Use default title
+    }
 
-    // Insert into database
+    // Save to database
     const result = await sql`
       INSERT INTO media (
-        user_id,
-        filename,
-        original_filename,
-        file_type,
-        file_size,
-        mime_type,
-        blob_url,
-        google_slides_url,
-        embed_url,
-        is_active,
-        created_at,
-        updated_at
-      ) VALUES (
-        ${user.id},
-        ${filename},
-        ${originalFilename},
-        'google-slides',
-        0,
-        'application/vnd.google-apps.presentation',
-        ${url},
-        ${url},
-        ${embedUrl},
-        true,
-        CURRENT_TIMESTAMP,
-        CURRENT_TIMESTAMP
+        user_id, filename, original_filename, file_type, file_size, 
+        mime_type, blob_url, google_slides_url, embed_url, folder_id
+      )
+      VALUES (
+        ${user.id}, ${`google-slides-${presentationId}`}, ${title}, 
+        'google-slides', 0, 'application/vnd.google-apps.presentation',
+        ${url}, ${url}, ${embedUrl}, 
+        ${folderId && folderId !== "null" ? folderId : null}
       )
       RETURNING *
     `
 
-    return NextResponse.json({
-      success: true,
-      file: result[0],
-      message: "Google Slides added successfully",
-    })
+    return NextResponse.json({ success: true, file: result[0] })
   } catch (error) {
-    console.error("Google Slides upload error:", error)
+    console.error("Google Slides error:", error)
     return NextResponse.json({ error: "Failed to add Google Slides" }, { status: 500 })
   }
 }

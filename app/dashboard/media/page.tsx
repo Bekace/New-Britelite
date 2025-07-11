@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +49,9 @@ import {
   Link,
   Presentation,
   Edit,
+  Folder,
+  FolderPlus,
+  Move,
 } from "lucide-react"
 
 interface MediaFile {
@@ -69,10 +73,24 @@ interface MediaFile {
   updated_at: string
   google_slides_url?: string
   embed_url?: string
+  folder_id?: string
+  folder_name?: string
+}
+
+interface FolderType {
+  id: string
+  name: string
+  description?: string
+  parent_id?: string
+  file_count: number
+  created_at: string
+  updated_at: string
 }
 
 export default function MediaPage() {
   const [files, setFiles] = useState<MediaFile[]>([])
+  const [folders, setFolders] = useState<FolderType[]>([])
+  const [currentFolder, setCurrentFolder] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -89,9 +107,41 @@ export default function MediaPage() {
   const [editGoogleSlidesUrl, setEditGoogleSlidesUrl] = useState("")
   const [saving, setSaving] = useState(false)
 
+  // Folder management
+  const [showCreateFolder, setShowCreateFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState("")
+  const [newFolderDescription, setNewFolderDescription] = useState("")
+  const [creatingFolder, setCreatingFolder] = useState(false)
+
+  // Bulk operations
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
+  const [showBulkActions, setShowBulkActions] = useState(false)
+  const [bulkAction, setBulkAction] = useState<"delete" | "move" | null>(null)
+  const [bulkTargetFolder, setBulkTargetFolder] = useState<string>("")
+  const [performingBulkAction, setPerformingBulkAction] = useState(false)
+
+  const fetchFolders = useCallback(async () => {
+    try {
+      const response = await fetch("/api/folders")
+      if (!response.ok) {
+        throw new Error("Failed to fetch folders")
+      }
+      const data = await response.json()
+      setFolders(data.folders || [])
+    } catch (error) {
+      console.error("Error fetching folders:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load folders",
+        variant: "destructive",
+      })
+    }
+  }, [])
+
   const fetchFiles = useCallback(async () => {
     try {
-      const response = await fetch("/api/media")
+      const url = currentFolder ? `/api/media?folderId=${currentFolder}` : "/api/media"
+      const response = await fetch(url)
       if (!response.ok) {
         throw new Error("Failed to fetch media files")
       }
@@ -107,11 +157,63 @@ export default function MediaPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [currentFolder])
 
   useEffect(() => {
+    fetchFolders()
     fetchFiles()
-  }, [fetchFiles])
+  }, [fetchFolders, fetchFiles])
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      toast({
+        title: "Error",
+        description: "Folder name is required",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setCreatingFolder(true)
+
+    try {
+      const response = await fetch("/api/folders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: newFolderName.trim(),
+          description: newFolderDescription.trim() || null,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to create folder")
+      }
+
+      const result = await response.json()
+      setFolders((prev) => [...prev, { ...result.folder, file_count: 0 }])
+      setNewFolderName("")
+      setNewFolderDescription("")
+      setShowCreateFolder(false)
+
+      toast({
+        title: "Success",
+        description: "Folder created successfully",
+      })
+    } catch (error) {
+      console.error("Create folder error:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create folder",
+        variant: "destructive",
+      })
+    } finally {
+      setCreatingFolder(false)
+    }
+  }
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = event.target.files
@@ -136,6 +238,9 @@ export default function MediaPage() {
 
         const formData = new FormData()
         formData.append("file", file)
+        if (currentFolder) {
+          formData.append("folderId", currentFolder)
+        }
 
         const response = await fetch("/api/media/upload", {
           method: "POST",
@@ -156,6 +261,9 @@ export default function MediaPage() {
         title: "Success",
         description: `${selectedFiles.length} file(s) uploaded successfully`,
       })
+
+      // Refresh folders to update file counts
+      fetchFolders()
     } catch (error) {
       console.error("Upload error:", error)
       toast({
@@ -201,6 +309,7 @@ export default function MediaPage() {
         },
         body: JSON.stringify({
           url: googleSlidesUrl,
+          folderId: currentFolder,
         }),
       })
 
@@ -216,6 +325,9 @@ export default function MediaPage() {
         title: "Success",
         description: "Google Slides added successfully",
       })
+
+      // Refresh folders to update file counts
+      fetchFolders()
     } catch (error) {
       console.error("Google Slides error:", error)
       toast({
@@ -346,6 +458,9 @@ export default function MediaPage() {
         title: "Success",
         description: "File deleted successfully",
       })
+
+      // Refresh folders to update file counts
+      fetchFolders()
     } catch (error) {
       console.error("Delete error:", error)
       toast({
@@ -353,6 +468,91 @@ export default function MediaPage() {
         description: "Failed to delete file",
         variant: "destructive",
       })
+    }
+  }
+
+  const handleSelectFile = (fileId: string, checked: boolean) => {
+    const newSelected = new Set(selectedFiles)
+    if (checked) {
+      newSelected.add(fileId)
+    } else {
+      newSelected.delete(fileId)
+    }
+    setSelectedFiles(newSelected)
+    setShowBulkActions(newSelected.size > 0)
+  }
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedFiles(new Set(filteredFiles.map((f) => f.id)))
+      setShowBulkActions(true)
+    } else {
+      setSelectedFiles(new Set())
+      setShowBulkActions(false)
+    }
+  }
+
+  const handleBulkOperation = async () => {
+    if (!bulkAction || selectedFiles.size === 0) return
+
+    if (bulkAction === "move" && !bulkTargetFolder) {
+      toast({
+        title: "Error",
+        description: "Please select a target folder",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setPerformingBulkAction(true)
+
+    try {
+      const response = await fetch("/api/media/bulk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: bulkAction,
+          fileIds: Array.from(selectedFiles),
+          folderId: bulkAction === "move" ? bulkTargetFolder : undefined,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to perform bulk operation")
+      }
+
+      const result = await response.json()
+
+      if (bulkAction === "delete") {
+        setFiles((prev) => prev.filter((f) => !selectedFiles.has(f.id)))
+      } else if (bulkAction === "move") {
+        // Refresh files to show updated folder assignments
+        fetchFiles()
+      }
+
+      setSelectedFiles(new Set())
+      setShowBulkActions(false)
+      setBulkAction(null)
+      setBulkTargetFolder("")
+
+      toast({
+        title: "Success",
+        description: result.message,
+      })
+
+      // Refresh folders to update file counts
+      fetchFolders()
+    } catch (error) {
+      console.error("Bulk operation error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to perform bulk operation",
+        variant: "destructive",
+      })
+    } finally {
+      setPerformingBulkAction(false)
     }
   }
 
@@ -507,6 +707,10 @@ export default function MediaPage() {
     )
   }
 
+  const currentFolderName = currentFolder
+    ? folders.find((f) => f.id === currentFolder)?.name || "Unknown Folder"
+    : "All Files"
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -516,12 +720,181 @@ export default function MediaPage() {
         </div>
       </div>
 
+      {/* Folder Navigation */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Folder className="h-5 w-5" />
+            Folders
+          </CardTitle>
+          <CardDescription>Organize your media files into folders</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <Button
+              variant={currentFolder === null ? "default" : "outline"}
+              size="sm"
+              onClick={() => setCurrentFolder(null)}
+            >
+              All Files ({files.length})
+            </Button>
+            {folders.map((folder) => (
+              <Button
+                key={folder.id}
+                variant={currentFolder === folder.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCurrentFolder(folder.id)}
+              >
+                <Folder className="h-4 w-4 mr-1" />
+                {folder.name} ({folder.file_count})
+              </Button>
+            ))}
+          </div>
+
+          <Dialog open={showCreateFolder} onOpenChange={setShowCreateFolder}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <FolderPlus className="h-4 w-4 mr-2" />
+                Create Folder
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create New Folder</DialogTitle>
+                <DialogDescription>Create a new folder to organize your media files</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="folder-name">Folder Name</Label>
+                  <Input
+                    id="folder-name"
+                    placeholder="Enter folder name"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    disabled={creatingFolder}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="folder-description">Description (Optional)</Label>
+                  <Textarea
+                    id="folder-description"
+                    placeholder="Enter folder description"
+                    value={newFolderDescription}
+                    onChange={(e) => setNewFolderDescription(e.target.value)}
+                    disabled={creatingFolder}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowCreateFolder(false)} disabled={creatingFolder}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleCreateFolder} disabled={creatingFolder || !newFolderName.trim()}>
+                    {creatingFolder ? "Creating..." : "Create Folder"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </CardContent>
+      </Card>
+
+      {/* Current Folder Info */}
+      {currentFolder && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Folder className="h-4 w-4" />
+          <span>Current folder: {currentFolderName}</span>
+        </div>
+      )}
+
+      {/* Bulk Actions */}
+      {showBulkActions && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-medium">{selectedFiles.size} file(s) selected</span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkAction("delete")}
+                    disabled={performingBulkAction}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Selected
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkAction("move")}
+                    disabled={performingBulkAction}
+                  >
+                    <Move className="h-4 w-4 mr-2" />
+                    Move to Folder
+                  </Button>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectedFiles(new Set())
+                  setShowBulkActions(false)
+                }}
+              >
+                Clear Selection
+              </Button>
+            </div>
+
+            {bulkAction === "move" && (
+              <div className="mt-4 flex items-center gap-2">
+                <Label>Move to:</Label>
+                <Select value={bulkTargetFolder} onValueChange={setBulkTargetFolder}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Select folder" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Uncategorized</SelectItem>
+                    {folders.map((folder) => (
+                      <SelectItem key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleBulkOperation} disabled={performingBulkAction}>
+                  {performingBulkAction ? "Moving..." : "Move Files"}
+                </Button>
+                <Button variant="outline" onClick={() => setBulkAction(null)}>
+                  Cancel
+                </Button>
+              </div>
+            )}
+
+            {bulkAction === "delete" && (
+              <div className="mt-4 flex items-center gap-2">
+                <span className="text-sm text-destructive">
+                  Are you sure you want to delete {selectedFiles.size} file(s)? This action cannot be undone.
+                </span>
+                <Button variant="destructive" onClick={handleBulkOperation} disabled={performingBulkAction}>
+                  {performingBulkAction ? "Deleting..." : "Confirm Delete"}
+                </Button>
+                <Button variant="outline" onClick={() => setBulkAction(null)}>
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Upload Section */}
       <Card>
         <CardHeader>
           <CardTitle>Upload Media Files</CardTitle>
           <CardDescription>
             Drag and drop files here or click to browse. Maximum file size: 3MB per file.
+            {currentFolder && ` Files will be uploaded to "${currentFolderName}" folder.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -570,7 +943,10 @@ export default function MediaPage() {
             <Link className="h-5 w-5" />
             Add Google Slides
           </CardTitle>
-          <CardDescription>Paste a Google Slides share link to add it to your media library.</CardDescription>
+          <CardDescription>
+            Paste a Google Slides share link to add it to your media library.
+            {currentFolder && ` It will be added to "${currentFolderName}" folder.`}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -630,6 +1006,17 @@ export default function MediaPage() {
         </div>
       </div>
 
+      {/* Select All Checkbox */}
+      {filteredFiles.length > 0 && (
+        <div className="flex items-center gap-2">
+          <Checkbox
+            checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0}
+            onCheckedChange={handleSelectAll}
+          />
+          <Label className="text-sm">Select all files</Label>
+        </div>
+      )}
+
       {/* Files Display */}
       {filteredFiles.length === 0 ? (
         <Card>
@@ -656,8 +1043,17 @@ export default function MediaPage() {
               <CardContent className={viewMode === "grid" ? "p-4" : "p-4 flex items-center gap-4"}>
                 {viewMode === "grid" ? (
                   <div className="space-y-3">
-                    <div className="aspect-square bg-muted rounded-lg overflow-hidden">
-                      {renderThumbnail(file, "small")}
+                    <div className="relative">
+                      <div className="aspect-square bg-muted rounded-lg overflow-hidden">
+                        {renderThumbnail(file, "small")}
+                      </div>
+                      <div className="absolute top-2 left-2">
+                        <Checkbox
+                          checked={selectedFiles.has(file.id)}
+                          onCheckedChange={(checked) => handleSelectFile(file.id, checked as boolean)}
+                          className="bg-white/80 border-white/80"
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -680,6 +1076,13 @@ export default function MediaPage() {
                       <h4 className="font-medium text-sm truncate" title={file.original_filename}>
                         {file.original_filename}
                       </h4>
+
+                      {file.folder_name && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Folder className="h-3 w-3" />
+                          <span>{file.folder_name}</span>
+                        </div>
+                      )}
 
                       {file.description && (
                         <p className="text-xs text-muted-foreground line-clamp-2">{file.description}</p>
@@ -750,9 +1153,15 @@ export default function MediaPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="flex-shrink-0">
-                      <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden flex items-center justify-center">
-                        {renderThumbnail(file, "small")}
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        checked={selectedFiles.has(file.id)}
+                        onCheckedChange={(checked) => handleSelectFile(file.id, checked as boolean)}
+                      />
+                      <div className="flex-shrink-0">
+                        <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden flex items-center justify-center">
+                          {renderThumbnail(file, "small")}
+                        </div>
                       </div>
                     </div>
 
@@ -773,6 +1182,13 @@ export default function MediaPage() {
                         {new Date(file.created_at).toLocaleDateString()}
                         {file.file_type === "video" && file.duration && <> • {formatDuration(file.duration)}</>}
                       </p>
+
+                      {file.folder_name && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
+                          <Folder className="h-3 w-3" />
+                          <span>{file.folder_name}</span>
+                        </div>
+                      )}
 
                       {file.description && (
                         <p className="text-sm text-muted-foreground line-clamp-1 mb-2">{file.description}</p>
@@ -920,6 +1336,16 @@ export default function MediaPage() {
                 <div className="flex items-center justify-center h-32 bg-muted rounded-lg">
                   {getFileIcon(selectedFile.file_type, selectedFile.mime_type)}
                   <span className="ml-2">Preview not available</span>
+                </div>
+              )}
+
+              {selectedFile.folder_name && (
+                <div>
+                  <Label className="text-sm font-medium">Folder</Label>
+                  <div className="flex items-center gap-1 mt-1">
+                    <Folder className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">{selectedFile.folder_name}</span>
+                  </div>
                 </div>
               )}
 

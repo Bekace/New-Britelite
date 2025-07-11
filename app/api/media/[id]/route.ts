@@ -78,7 +78,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
 
     const body = await request.json()
-    const { tags, description, google_slides_url } = body
+    const { tags, description, google_slides_url, folder_id } = body
 
     // Get current file info
     const currentFile = await sql`
@@ -91,6 +91,18 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
 
     const file = currentFile[0]
+
+    // If folder_id is provided, verify it belongs to the user
+    if (folder_id) {
+      const folder = await sql`
+        SELECT id FROM folders 
+        WHERE id = ${folder_id} AND user_id = ${user.id} AND is_active = true
+      `
+
+      if (folder.length === 0) {
+        return NextResponse.json({ error: "Folder not found" }, { status: 404 })
+      }
+    }
 
     // If it's a Google Slides file and URL is being updated
     let embedUrl = file.embed_url
@@ -133,6 +145,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       SET 
         tags = ${tags || null},
         description = ${description || null},
+        folder_id = ${folder_id || null},
         google_slides_url = ${file.file_type === "google-slides" ? google_slides_url || file.google_slides_url : file.google_slides_url},
         embed_url = ${file.file_type === "google-slides" ? embedUrl : file.embed_url},
         blob_url = ${file.file_type === "google-slides" ? blobUrl : file.blob_url},
