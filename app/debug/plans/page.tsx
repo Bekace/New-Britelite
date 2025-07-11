@@ -1,22 +1,22 @@
 "use client"
 
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { CheckCircle, AlertCircle, Database, Search, Settings } from "lucide-react"
 
 interface DebugStep {
   id: string
   name: string
-  status: "pending" | "success" | "failed" | "running"
+  status: "pending" | "running" | "success" | "failed"
   result?: any
   error?: string
 }
 
 export default function PlansDebugPage() {
-  const [debugSteps, setDebugSteps] = useState<DebugStep[]>([
+  const [steps, setSteps] = useState<DebugStep[]>([
     { id: "connection", name: "Database Connection Test", status: "pending" },
     { id: "table-exists", name: "Plans Table Existence Check", status: "pending" },
     { id: "all-tables", name: "List All Database Tables", status: "pending" },
@@ -25,100 +25,89 @@ export default function PlansDebugPage() {
     { id: "active-count", name: "Active Plans Count", status: "pending" },
     { id: "sample-data", name: "Sample Plans Data", status: "pending" },
     { id: "api-query", name: "API Query Test", status: "pending" },
-    { id: "features-table", name: "Plan Features Table Check", status: "pending" },
-    { id: "assignments-table", name: "Plan Feature Assignments Table Check", status: "pending" },
+    { id: "plan-features", name: "Plan Features Table Check", status: "pending" },
+    { id: "plan-assignments", name: "Plan Feature Assignments Table Check", status: "pending" },
     { id: "complex-query", name: "Complex Query with Features Test", status: "pending" },
   ])
+
   const [isRunning, setIsRunning] = useState(false)
-  const [debugStartTime, setDebugStartTime] = useState<Date | null>(null)
+  const [debugStartTime, setDebugStartTime] = useState<string>("")
 
   const updateStep = (id: string, updates: Partial<DebugStep>) => {
-    setDebugSteps((prev) => prev.map((step) => (step.id === id ? { ...step, ...updates } : step)))
+    setSteps((prev) => prev.map((step) => (step.id === id ? { ...step, ...updates } : step)))
   }
 
   const runDebug = async () => {
     setIsRunning(true)
-    setDebugStartTime(new Date())
+    setDebugStartTime(new Date().toLocaleString())
 
     // Reset all steps
-    setDebugSteps((prev) =>
-      prev.map((step) => ({ ...step, status: "pending" as const, result: undefined, error: undefined })),
-    )
+    setSteps((prev) => prev.map((step) => ({ ...step, status: "pending", result: undefined, error: undefined })))
 
     try {
       const response = await fetch("/api/debug/plans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "run_all_tests" }),
       })
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
 
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error("No response body")
+      const data = await response.json()
 
-      const decoder = new TextDecoder()
-      let buffer = ""
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
-
-        for (const line of lines) {
-          if (line.trim() && line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.step) {
-                updateStep(data.step, {
-                  status: data.status,
-                  result: data.result,
-                  error: data.error,
-                })
-              }
-            } catch (e) {
-              console.error("Failed to parse SSE data:", e)
-            }
+      if (data.success && data.results) {
+        // Update each step with results
+        Object.entries(data.results).forEach(([stepId, result]: [string, any]) => {
+          if (result.success) {
+            updateStep(stepId, {
+              status: "success",
+              result: result.data,
+            })
+          } else {
+            updateStep(stepId, {
+              status: "failed",
+              error: result.error,
+            })
           }
-        }
+        })
+      } else {
+        console.error("Debug API returned error:", data)
       }
     } catch (error) {
-      console.error("Debug failed:", error)
-      // Mark all pending steps as failed
-      setDebugSteps((prev) =>
-        prev.map((step) =>
-          step.status === "pending" || step.status === "running"
-            ? { ...step, status: "failed", error: error instanceof Error ? error.message : "Unknown error" }
-            : step,
-        ),
+      console.error("Debug request failed:", error)
+      // Mark all steps as failed
+      setSteps((prev) =>
+        prev.map((step) => ({
+          ...step,
+          status: "failed",
+          error: "Debug request failed",
+        })),
       )
     } finally {
       setIsRunning(false)
     }
   }
 
-  const getStatusIcon = (status: DebugStep["status"]) => {
+  const getStatusIcon = (status: string) => {
     switch (status) {
       case "success":
-        return <CheckCircle className="h-5 w-5 text-green-500" />
+        return <CheckCircle className="h-4 w-4 text-green-500" />
       case "failed":
-        return <XCircle className="h-5 w-5 text-red-500" />
+        return <AlertCircle className="h-4 w-4 text-red-500" />
       case "running":
-        return <AlertCircle className="h-5 w-5 text-yellow-500 animate-pulse" />
+        return <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
       default:
-        return <div className="h-5 w-5 rounded-full border-2 border-gray-300" />
+        return <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
     }
   }
 
-  const getStatusBadge = (status: DebugStep["status"]) => {
+  const getStatusBadge = (status: string) => {
     switch (status) {
       case "success":
         return (
-          <Badge variant="default" className="bg-green-500">
+          <Badge variant="default" className="bg-green-100 text-green-800">
             success
           </Badge>
         )
@@ -132,90 +121,99 @@ export default function PlansDebugPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">Plans Debug</h1>
-        <p className="text-muted-foreground">Detailed breakdown of each plans loading step</p>
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Plans Debug Tool</h1>
+          <p className="text-gray-600">Diagnose issues with plans loading and database queries</p>
+        </div>
+        <Button onClick={runDebug} disabled={isRunning} size="lg">
+          {isRunning ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
+              Running Debug...
+            </>
+          ) : (
+            <>
+              <Search className="h-4 w-4 mr-2" />
+              Run Plans Debug
+            </>
+          )}
+        </Button>
       </div>
 
-      <Card className="mb-6">
+      {/* Debug Steps */}
+      <Card>
         <CardHeader>
-          <CardTitle>Debug Controls</CardTitle>
-          <CardDescription>Run comprehensive plans debugging to identify loading issues</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            Plans Debug Steps
+          </CardTitle>
+          <CardDescription>Detailed breakdown of each plans loading step</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Button onClick={runDebug} disabled={isRunning} className="w-full">
-            {isRunning ? "Running Debug..." : "Run Plans Debug"}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-4">
-        {debugSteps.map((step, index) => (
-          <Card key={step.id}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+        <CardContent className="space-y-4">
+          {steps.map((step, index) => (
+            <div key={step.id} className="border rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-500">Step {index + 1}:</span>
                   {getStatusIcon(step.status)}
-                  <div>
-                    <CardTitle className="text-lg">
-                      Step {index + 1}: {step.name}
-                    </CardTitle>
-                  </div>
+                  <h3 className="font-medium">{step.name}</h3>
                 </div>
                 {getStatusBadge(step.status)}
               </div>
-            </CardHeader>
 
-            {(step.result || step.error) && (
-              <CardContent className="pt-0">
-                <Separator className="mb-4" />
+              {step.status === "success" && step.result && (
+                <div className="mt-3">
+                  <p className="text-sm text-gray-600 mb-2">Result:</p>
+                  <pre className="bg-green-50 p-3 rounded text-xs overflow-x-auto border border-green-200">
+                    {JSON.stringify(step.result, null, 2)}
+                  </pre>
+                </div>
+              )}
 
-                {step.status === "success" && step.result && (
-                  <div>
-                    <h4 className="font-semibold mb-2 text-green-700">Result:</h4>
-                    <pre className="bg-green-50 p-3 rounded-md text-sm overflow-x-auto border border-green-200">
-                      {typeof step.result === "string" ? step.result : JSON.stringify(step.result, null, 2)}
-                    </pre>
-                  </div>
-                )}
-
-                {step.status === "failed" && step.error && (
-                  <div>
-                    <h4 className="font-semibold mb-2 text-red-700">Error:</h4>
-                    <pre className="bg-red-50 p-3 rounded-md text-sm overflow-x-auto border border-red-200">
-                      {step.error}
-                    </pre>
+              {step.status === "failed" && step.error && (
+                <Alert variant="destructive" className="mt-3">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <strong>Error:</strong> {step.error}
                     <details className="mt-2">
-                      <summary className="cursor-pointer text-sm text-red-600 hover:text-red-800">
-                        View Stack Trace
-                      </summary>
-                      <pre className="bg-red-50 p-3 rounded-md text-xs overflow-x-auto border border-red-200 mt-2">
-                        {step.error}
-                      </pre>
+                      <summary className="cursor-pointer text-sm underline">View Stack Trace</summary>
+                      <pre className="mt-2 text-xs bg-red-50 p-2 rounded border overflow-x-auto">{step.error}</pre>
                     </details>
-                  </div>
-                )}
-              </CardContent>
-            )}
-          </Card>
-        ))}
-      </div>
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
+      {/* Debug Info */}
       {debugStartTime && (
-        <Card className="mt-6">
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Debug completed at: {debugStartTime.toLocaleString()}</p>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Debug Information
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600">
+              <strong>Debug completed at:</strong> {debugStartTime}
+            </p>
           </CardContent>
         </Card>
       )}
 
-      <Card className="mt-6">
+      {/* Instructions */}
+      <Card>
         <CardHeader>
           <CardTitle>How to Use This Debug Tool</CardTitle>
         </CardHeader>
         <CardContent>
-          <ol className="list-decimal list-inside space-y-2 text-sm">
+          <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
             <li>Click "Run Plans Debug" to test all plans loading steps</li>
             <li>Review each step to identify where the failure occurs</li>
             <li>Check database connectivity, table names, and query structure</li>

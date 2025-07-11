@@ -17,15 +17,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 })
     }
 
-    // Fetch all plans with user counts
+    // Fetch all plans with user counts - using correct column names
     const plans = await sql`
       SELECT 
         p.*,
+        CASE 
+          WHEN p.billing_cycle = 'yearly' THEN p.price_yearly
+          ELSE p.price_monthly
+        END as price,
         COUNT(u.id) as user_count
       FROM plans p
       LEFT JOIN users u ON p.id = u.plan_id AND u.is_active = true
       GROUP BY p.id
-      ORDER BY p.price ASC
+      ORDER BY 
+        CASE 
+          WHEN p.billing_cycle = 'yearly' THEN p.price_yearly
+          ELSE p.price_monthly
+        END ASC
     `
 
     return NextResponse.json({ success: true, plans })
@@ -57,14 +65,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Name and price are required" }, { status: 400 })
     }
 
-    // Create new plan
+    // Create new plan - using correct column names
     const result = await sql`
       INSERT INTO plans (
-        name, description, price, billing_cycle, 
+        name, description, price_monthly, price_yearly, billing_cycle, 
         max_screens, max_storage_gb, max_playlists
       )
       VALUES (
-        ${name}, ${description || null}, ${price}, ${billing_cycle || "monthly"},
+        ${name}, ${description || null}, 
+        ${billing_cycle === "yearly" ? 0 : price}, 
+        ${billing_cycle === "yearly" ? price : 0}, 
+        ${billing_cycle || "monthly"},
         ${max_screens || 1}, ${max_storage_gb || 1}, ${max_playlists || 5}
       )
       RETURNING *

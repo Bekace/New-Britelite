@@ -1,271 +1,284 @@
-import type { NextRequest } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/database"
 
 export async function POST(request: NextRequest) {
-  const encoder = new TextEncoder()
+  try {
+    const body = await request.json()
+    const { action } = body
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const sendUpdate = (step: string, status: "success" | "failed" | "running", result?: any, error?: string) => {
-        const data = JSON.stringify({ step, status, result, error })
-        controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+    if (action !== "run_all_tests") {
+      return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 })
+    }
+
+    const results: Record<string, any> = {}
+
+    // Step 1: Database Connection Test
+    try {
+      await sql`SELECT 1 as test`
+      results["connection"] = {
+        success: true,
+        data: "Database connection successful",
       }
-
-      try {
-        // Step 1: Test database connection
-        sendUpdate("connection", "running")
-        try {
-          await sql`SELECT 1 as test`
-          sendUpdate("connection", "success", "Database connection successful")
-        } catch (error) {
-          sendUpdate("connection", "failed", null, error instanceof Error ? error.message : "Connection failed")
-          controller.close()
-          return
-        }
-
-        // Step 2: Check if plans table exists
-        sendUpdate("table-exists", "running")
-        try {
-          const tableCheck = await sql`
-            SELECT EXISTS (
-              SELECT FROM information_schema.tables 
-              WHERE table_schema = 'public' 
-              AND table_name = 'plans'
-            ) as table_exists
-          `
-          const tableCount =
-            await sql`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'plans'`
-          sendUpdate("table-exists", "success", {
-            tableExists: tableCheck[0].table_exists,
-            tableCount: Number.parseInt(tableCount[0].count),
-          })
-        } catch (error) {
-          sendUpdate("table-exists", "failed", null, error instanceof Error ? error.message : "Table check failed")
-        }
-
-        // Step 3: List all tables
-        sendUpdate("all-tables", "running")
-        try {
-          const allTables = await sql`
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            ORDER BY table_name
-          `
-          sendUpdate("all-tables", "success", {
-            totalTables: allTables.length,
-            tables: allTables.map((t) => t.table_name),
-          })
-        } catch (error) {
-          sendUpdate("all-tables", "failed", null, error instanceof Error ? error.message : "Failed to list tables")
-        }
-
-        // Step 4: Get plans table structure
-        sendUpdate("table-structure", "running")
-        try {
-          const columns = await sql`
-            SELECT column_name, data_type, is_nullable, column_default
-            FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = 'plans'
-            ORDER BY ordinal_position
-          `
-          sendUpdate("table-structure", "success", {
-            columnCount: columns.length,
-            columns: columns,
-          })
-        } catch (error) {
-          sendUpdate(
-            "table-structure",
-            "failed",
-            null,
-            error instanceof Error ? error.message : "Failed to get table structure",
-          )
-        }
-
-        // Step 5: Count total plans
-        sendUpdate("total-count", "running")
-        try {
-          const totalCount = await sql`SELECT COUNT(*) as count FROM plans`
-          sendUpdate("total-count", "success", {
-            totalPlans: Number.parseInt(totalCount[0].count),
-          })
-        } catch (error) {
-          sendUpdate("total-count", "failed", null, error instanceof Error ? error.message : "Failed to count plans")
-        }
-
-        // Step 6: Count active plans
-        sendUpdate("active-count", "running")
-        try {
-          const activeCount = await sql`SELECT COUNT(*) as count FROM plans WHERE is_active = true`
-          sendUpdate("active-count", "success", {
-            activePlans: Number.parseInt(activeCount[0].count),
-          })
-        } catch (error) {
-          sendUpdate(
-            "active-count",
-            "failed",
-            null,
-            error instanceof Error ? error.message : "Failed to count active plans",
-          )
-        }
-
-        // Step 7: Get sample plans data
-        sendUpdate("sample-data", "running")
-        try {
-          const samplePlans = await sql`
-            SELECT id, name, description, price_monthly, price_yearly, billing_cycle, 
-                   max_screens, max_storage_gb, max_playlists, is_active, created_at
-            FROM plans 
-            LIMIT 3
-          `
-          sendUpdate("sample-data", "success", {
-            sampleCount: samplePlans.length,
-            plans: samplePlans,
-          })
-        } catch (error) {
-          sendUpdate(
-            "sample-data",
-            "failed",
-            null,
-            error instanceof Error ? error.message : "Failed to get sample data",
-          )
-        }
-
-        // Step 8: Test the exact API query (corrected)
-        sendUpdate("api-query", "running")
-        try {
-          const apiQuery = await sql`
-            SELECT 
-              id, name, description, 
-              CASE 
-                WHEN billing_cycle = 'yearly' THEN price_yearly 
-                ELSE price_monthly 
-              END as price,
-              billing_cycle,
-              max_screens, max_storage_gb, max_playlists,
-              is_active, created_at
-            FROM plans 
-            WHERE is_active = true 
-            ORDER BY 
-              CASE 
-                WHEN billing_cycle = 'yearly' THEN price_yearly 
-                ELSE price_monthly 
-              END ASC
-          `
-          sendUpdate("api-query", "success", {
-            queryResults: apiQuery.length,
-            plans: apiQuery,
-          })
-        } catch (error) {
-          sendUpdate("api-query", "failed", null, error instanceof Error ? error.message : "API query failed")
-        }
-
-        // Step 9: Check plan_features table
-        sendUpdate("features-table", "running")
-        try {
-          const featuresTableCheck = await sql`
-            SELECT EXISTS (
-              SELECT FROM information_schema.tables 
-              WHERE table_schema = 'public' 
-              AND table_name = 'plan_features'
-            ) as table_exists
-          `
-          sendUpdate("features-table", "success", {
-            tableExists: featuresTableCheck[0].table_exists,
-          })
-        } catch (error) {
-          sendUpdate(
-            "features-table",
-            "failed",
-            null,
-            error instanceof Error ? error.message : "Features table check failed",
-          )
-        }
-
-        // Step 10: Check plan_feature_assignments table
-        sendUpdate("assignments-table", "running")
-        try {
-          const assignmentsTableCheck = await sql`
-            SELECT EXISTS (
-              SELECT FROM information_schema.tables 
-              WHERE table_schema = 'public' 
-              AND table_name = 'plan_feature_assignments'
-            ) as table_exists
-          `
-          sendUpdate("assignments-table", "success", {
-            tableExists: assignmentsTableCheck[0].table_exists,
-          })
-        } catch (error) {
-          sendUpdate(
-            "assignments-table",
-            "failed",
-            null,
-            error instanceof Error ? error.message : "Assignments table check failed",
-          )
-        }
-
-        // Step 11: Test complex query with features (corrected)
-        sendUpdate("complex-query", "running")
-        try {
-          const complexQuery = await sql`
-            SELECT 
-              p.id, p.name, p.description, 
-              CASE 
-                WHEN p.billing_cycle = 'yearly' THEN p.price_yearly 
-                ELSE p.price_monthly 
-              END as price,
-              p.billing_cycle,
-              p.max_screens, p.max_storage_gb, p.max_playlists,
-              p.is_active, p.created_at,
-              COALESCE(
-                JSON_AGG(
-                  CASE 
-                    WHEN pf.id IS NOT NULL AND pfa.is_enabled = true THEN 
-                      JSON_BUILD_OBJECT(
-                        'id', pf.id,
-                        'name', pf.name,
-                        'description', pf.description,
-                        'feature_key', pf.feature_key
-                      )
-                    ELSE NULL 
-                  END
-                ) FILTER (WHERE pf.id IS NOT NULL AND pfa.is_enabled = true), 
-                '[]'::json
-              ) as features
-            FROM plans p
-            LEFT JOIN plan_feature_assignments pfa ON p.id = pfa.plan_id AND pfa.is_enabled = true
-            LEFT JOIN plan_features pf ON pfa.feature_id = pf.id AND pf.is_active = true
-            WHERE p.is_active = true 
-            GROUP BY p.id, p.name, p.description, p.price_monthly, p.price_yearly, p.billing_cycle,
-                     p.max_screens, p.max_storage_gb, p.max_playlists,
-                     p.is_active, p.created_at
-            ORDER BY 
-              CASE 
-                WHEN p.billing_cycle = 'yearly' THEN p.price_yearly 
-                ELSE p.price_monthly 
-              END ASC
-          `
-          sendUpdate("complex-query", "success", {
-            queryResults: complexQuery.length,
-            plans: complexQuery,
-          })
-        } catch (error) {
-          sendUpdate("complex-query", "failed", null, error instanceof Error ? error.message : "Complex query failed")
-        }
-      } catch (error) {
-        console.error("Debug stream error:", error)
-      } finally {
-        controller.close()
+    } catch (error) {
+      results["connection"] = {
+        success: false,
+        error: `Database connection failed: ${error}`,
       }
-    },
-  })
+    }
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  })
+    // Step 2: Plans Table Existence Check
+    try {
+      const tableCheck = await sql`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'plans'
+        ) as table_exists
+      `
+      const tableCount = await sql`
+        SELECT COUNT(*) as count FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'plans'
+      `
+      results["table-exists"] = {
+        success: true,
+        data: {
+          tableExists: tableCheck[0].table_exists,
+          tableCount: Number.parseInt(tableCount[0].count),
+        },
+      }
+    } catch (error) {
+      results["table-exists"] = {
+        success: false,
+        error: `Table existence check failed: ${error}`,
+      }
+    }
+
+    // Step 3: List All Database Tables
+    try {
+      const tables = await sql`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        ORDER BY table_name
+      `
+      results["all-tables"] = {
+        success: true,
+        data: {
+          totalTables: tables.length,
+          tables: tables.map((t) => t.table_name),
+        },
+      }
+    } catch (error) {
+      results["all-tables"] = {
+        success: false,
+        error: `Failed to list tables: ${error}`,
+      }
+    }
+
+    // Step 4: Plans Table Structure
+    try {
+      const columns = await sql`
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'plans'
+        ORDER BY ordinal_position
+      `
+      results["table-structure"] = {
+        success: true,
+        data: {
+          columnCount: columns.length,
+          columns: columns,
+        },
+      }
+    } catch (error) {
+      results["table-structure"] = {
+        success: false,
+        error: `Failed to get table structure: ${error}`,
+      }
+    }
+
+    // Step 5: Total Plans Count
+    try {
+      const totalCount = await sql`SELECT COUNT(*) as count FROM plans`
+      results["total-count"] = {
+        success: true,
+        data: {
+          totalPlans: Number.parseInt(totalCount[0].count),
+        },
+      }
+    } catch (error) {
+      results["total-count"] = {
+        success: false,
+        error: `Failed to count total plans: ${error}`,
+      }
+    }
+
+    // Step 6: Active Plans Count
+    try {
+      const activeCount = await sql`SELECT COUNT(*) as count FROM plans WHERE is_active = true`
+      results["active-count"] = {
+        success: true,
+        data: {
+          activePlans: Number.parseInt(activeCount[0].count),
+        },
+      }
+    } catch (error) {
+      results["active-count"] = {
+        success: false,
+        error: `Failed to count active plans: ${error}`,
+      }
+    }
+
+    // Step 7: Sample Plans Data (using correct column names)
+    try {
+      const samplePlans = await sql`
+        SELECT 
+          id, name, description, price_monthly, price_yearly, billing_cycle,
+          max_screens, max_storage_gb, max_playlists, is_active, created_at
+        FROM plans 
+        LIMIT 3
+      `
+      results["sample-data"] = {
+        success: true,
+        data: {
+          sampleCount: samplePlans.length,
+          plans: samplePlans,
+        },
+      }
+    } catch (error) {
+      results["sample-data"] = {
+        success: false,
+        error: `Failed to get sample plans: ${error}`,
+      }
+    }
+
+    // Step 8: API Query Test (using correct column names)
+    try {
+      const apiQuery = await sql`
+        SELECT 
+          p.*,
+          CASE 
+            WHEN p.billing_cycle = 'yearly' THEN p.price_yearly
+            ELSE p.price_monthly
+          END as price,
+          COUNT(u.id) as user_count
+        FROM plans p
+        LEFT JOIN users u ON p.id = u.plan_id AND u.is_active = true
+        GROUP BY p.id
+        ORDER BY 
+          CASE 
+            WHEN p.billing_cycle = 'yearly' THEN p.price_yearly
+            ELSE p.price_monthly
+          END ASC
+      `
+      results["api-query"] = {
+        success: true,
+        data: {
+          queryResults: apiQuery.length,
+          plans: apiQuery,
+        },
+      }
+    } catch (error) {
+      results["api-query"] = {
+        success: false,
+        error: `API query test failed: ${error}`,
+      }
+    }
+
+    // Step 9: Plan Features Table Check
+    try {
+      const featuresTableCheck = await sql`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'plan_features'
+        ) as table_exists
+      `
+      results["plan-features"] = {
+        success: true,
+        data: {
+          tableExists: featuresTableCheck[0].table_exists,
+        },
+      }
+    } catch (error) {
+      results["plan-features"] = {
+        success: false,
+        error: `Plan features table check failed: ${error}`,
+      }
+    }
+
+    // Step 10: Plan Feature Assignments Table Check
+    try {
+      const assignmentsTableCheck = await sql`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'plan_feature_assignments'
+        ) as table_exists
+      `
+      results["plan-assignments"] = {
+        success: true,
+        data: {
+          tableExists: assignmentsTableCheck[0].table_exists,
+        },
+      }
+    } catch (error) {
+      results["plan-assignments"] = {
+        success: false,
+        error: `Plan assignments table check failed: ${error}`,
+      }
+    }
+
+    // Step 11: Complex Query with Features Test (using correct column names)
+    try {
+      const complexQuery = await sql`
+        SELECT 
+          p.*,
+          CASE 
+            WHEN p.billing_cycle = 'yearly' THEN p.price_yearly
+            ELSE p.price_monthly
+          END as price,
+          COUNT(DISTINCT u.id) as user_count,
+          COUNT(DISTINCT pfa.id) as feature_count
+        FROM plans p
+        LEFT JOIN users u ON p.id = u.plan_id AND u.is_active = true
+        LEFT JOIN plan_feature_assignments pfa ON p.id = pfa.plan_id AND pfa.is_enabled = true
+        GROUP BY p.id
+        ORDER BY 
+          CASE 
+            WHEN p.billing_cycle = 'yearly' THEN p.price_yearly
+            ELSE p.price_monthly
+          END ASC
+        LIMIT 5
+      `
+      results["complex-query"] = {
+        success: true,
+        data: {
+          queryResults: complexQuery.length,
+          plans: complexQuery,
+        },
+      }
+    } catch (error) {
+      results["complex-query"] = {
+        success: false,
+        error: `Complex query test failed: ${error}`,
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      results: results,
+      timestamp: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.error("Plans debug error:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Internal server error during debug",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 },
+    )
+  }
 }
