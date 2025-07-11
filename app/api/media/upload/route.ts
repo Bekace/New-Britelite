@@ -1,24 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { put } from "@vercel/blob"
-import sharp from "sharp"
 import { getUserFromSession } from "@/lib/auth"
 import { sql } from "@/lib/database"
-
-const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
-const ALLOWED_TYPES = {
-  "image/jpeg": "image",
-  "image/png": "image",
-  "image/gif": "image",
-  "image/webp": "image",
-  "video/mp4": "video",
-  "video/webm": "video",
-  "video/quicktime": "video",
-  "application/pdf": "document",
-  "application/msword": "document",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
-  "application/vnd.ms-powerpoint": "document",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "document",
-}
+import sharp from "sharp"
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,15 +18,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
+    // Validate file size (3MB limit)
+    const maxSize = 3 * 1024 * 1024
+    if (file.size > maxSize) {
       return NextResponse.json({ error: "File size exceeds 3MB limit" }, { status: 400 })
     }
 
     // Validate file type
-    const fileType = ALLOWED_TYPES[file.type as keyof typeof ALLOWED_TYPES]
-    if (!fileType) {
-      return NextResponse.json({ error: "File type not supported" }, { status: 400 })
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "video/mp4",
+      "video/webm",
+      "application/pdf",
+      "text/plain",
+    ]
+    if (!allowedTypes.includes(file.type)) {
+      return NextResponse.json({ error: "Unsupported file type" }, { status: 400 })
     }
 
     // Generate unique filename
@@ -51,25 +45,25 @@ export async function POST(request: NextRequest) {
     const extension = file.name.split(".").pop()
     const filename = `${timestamp}-${randomString}.${extension}`
 
-    // Upload file to Vercel Blob
+    // Upload to Vercel Blob
     const blob = await put(filename, file, {
       access: "public",
     })
 
-    let thumbnailUrl: string | undefined
-    let width: number | undefined
-    let height: number | undefined
+    let thumbnailUrl: string | null = null
+    let width: number | null = null
+    let height: number | null = null
 
     // Generate thumbnail for images
-    if (fileType === "image") {
+    if (file.type.startsWith("image/")) {
       try {
         const buffer = await file.arrayBuffer()
         const imageBuffer = Buffer.from(buffer)
 
         // Get image dimensions
         const metadata = await sharp(imageBuffer).metadata()
-        width = metadata.width
-        height = metadata.height
+        width = metadata.width || null
+        height = metadata.height || null
 
         // Generate thumbnail
         const thumbnailBuffer = await sharp(imageBuffer)
@@ -77,8 +71,7 @@ export async function POST(request: NextRequest) {
           .jpeg({ quality: 80 })
           .toBuffer()
 
-        const thumbnailFilename = `thumb-${filename.replace(/\.[^/.]+$/, ".jpg")}`
-        const thumbnailBlob = await put(thumbnailFilename, thumbnailBuffer, {
+        const thumbnailBlob = await put(`thumb-${filename}`, thumbnailBuffer, {
           access: "public",
           contentType: "image/jpeg",
         })
@@ -90,7 +83,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Save file metadata to database
+    // Save to database
     const result = await sql`
       INSERT INTO media (
         user_id,
@@ -102,33 +95,25 @@ export async function POST(request: NextRequest) {
         blob_url,
         thumbnail_url,
         width,
-        height,
-        tags,
-        description
+        height
       ) VALUES (
         ${user.id},
         ${filename},
         ${file.name},
-        ${fileType},
+        ${file.type},
         ${file.size},
         ${file.type},
         ${blob.url},
-        ${thumbnailUrl || null},
-        ${width || null},
-        ${height || null},
-        ${[]},
-        ${null}
+        ${thumbnailUrl},
+        ${width},
+        ${height}
       )
       RETURNING *
     `
 
-    return NextResponse.json({
-      success: true,
-      file: result[0],
-      message: "File uploaded successfully",
-    })
+    return NextResponse.json(result[0])
   } catch (error) {
-    console.error("Upload error:", error)
+    console.error("Error uploading file:", error)
     return NextResponse.json({ error: "Failed to upload file" }, { status: 500 })
   }
 }
