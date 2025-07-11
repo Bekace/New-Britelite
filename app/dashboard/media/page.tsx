@@ -29,6 +29,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import {
   Upload,
@@ -44,6 +45,8 @@ import {
   Filter,
   Play,
   File,
+  Link,
+  Presentation,
 } from "lucide-react"
 
 interface MediaFile {
@@ -63,6 +66,8 @@ interface MediaFile {
   is_active: boolean
   created_at: string
   updated_at: string
+  google_slides_url?: string
+  embed_url?: string
 }
 
 export default function MediaPage() {
@@ -75,6 +80,8 @@ export default function MediaPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [selectedFile, setSelectedFile] = useState<MediaFile | null>(null)
   const [deleteFile, setDeleteFile] = useState<MediaFile | null>(null)
+  const [googleSlidesUrl, setGoogleSlidesUrl] = useState("")
+  const [addingGoogleSlides, setAddingGoogleSlides] = useState(false)
 
   const fetchFiles = useCallback(async () => {
     try {
@@ -155,6 +162,63 @@ export default function MediaPage() {
       setUploadProgress(0)
       // Reset file input
       event.target.value = ""
+    }
+  }
+
+  const handleGoogleSlidesSubmit = async () => {
+    if (!googleSlidesUrl.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a Google Slides URL",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Validate Google Slides URL
+    if (!googleSlidesUrl.includes("docs.google.com/presentation")) {
+      toast({
+        title: "Invalid URL",
+        description: "Please enter a valid Google Slides share link",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setAddingGoogleSlides(true)
+
+    try {
+      const response = await fetch("/api/media/google-slides", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: googleSlidesUrl,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to add Google Slides")
+      }
+
+      const result = await response.json()
+      setFiles((prev) => [result.file, ...prev])
+      setGoogleSlidesUrl("")
+
+      toast({
+        title: "Success",
+        description: "Google Slides added successfully",
+      })
+    } catch (error) {
+      console.error("Google Slides error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add Google Slides",
+        variant: "destructive",
+      })
+    } finally {
+      setAddingGoogleSlides(false)
     }
   }
 
@@ -240,6 +304,8 @@ export default function MediaPage() {
         return <FileImage className="h-4 w-4" />
       case "video":
         return <FileVideo className="h-4 w-4" />
+      case "google-slides":
+        return <Presentation className="h-4 w-4 text-orange-600" />
       case "document":
         // Return specific icons based on document type
         if (mimeType?.includes("pdf")) {
@@ -301,6 +367,23 @@ export default function MediaPage() {
               <Play className="h-6 w-6 text-white fill-white" />
             </div>
           </div>
+        </div>
+      )
+    } else if (file.file_type === "google-slides") {
+      return (
+        <div className={`${containerClass} flex items-center justify-center bg-orange-50`}>
+          {file.thumbnail_url ? (
+            <img
+              src={file.thumbnail_url || "/placeholder.svg"}
+              alt={file.original_filename}
+              className="w-full h-full object-contain"
+            />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center">
+              <Presentation className="h-8 w-8 text-orange-600 mb-2" />
+              <span className="text-xs font-medium text-orange-700">Google Slides</span>
+            </div>
+          )}
         </div>
       )
     } else if (file.file_type === "document") {
@@ -396,6 +479,35 @@ export default function MediaPage() {
         </CardContent>
       </Card>
 
+      {/* Google Slides Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Link className="h-5 w-5" />
+            Add Google Slides
+          </CardTitle>
+          <CardDescription>Paste a Google Slides share link to add it to your media library.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="google-slides-url">Google Slides Share Link</Label>
+              <Textarea
+                id="google-slides-url"
+                placeholder="https://docs.google.com/presentation/d/..."
+                value={googleSlidesUrl}
+                onChange={(e) => setGoogleSlidesUrl(e.target.value)}
+                disabled={addingGoogleSlides}
+                className="mt-1"
+              />
+            </div>
+            <Button onClick={handleGoogleSlidesSubmit} disabled={addingGoogleSlides || !googleSlidesUrl.trim()}>
+              {addingGoogleSlides ? "Adding..." : "Add Google Slides"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Search and Filter */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <div className="flex flex-1 gap-4 items-center">
@@ -419,6 +531,7 @@ export default function MediaPage() {
               <SelectItem value="image">Images</SelectItem>
               <SelectItem value="video">Videos</SelectItem>
               <SelectItem value="document">Documents</SelectItem>
+              <SelectItem value="google-slides">Google Slides</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -466,9 +579,15 @@ export default function MediaPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className="text-xs">
-                          {file.file_type === "document" ? getDocumentTypeName(file.mime_type) : file.file_type}
+                          {file.file_type === "document"
+                            ? getDocumentTypeName(file.mime_type)
+                            : file.file_type === "google-slides"
+                              ? "Google Slides"
+                              : file.file_type}
                         </Badge>
-                        <span className="text-xs text-muted-foreground">{formatFileSize(file.file_size)}</span>
+                        {file.file_type !== "google-slides" && (
+                          <span className="text-xs text-muted-foreground">{formatFileSize(file.file_size)}</span>
+                        )}
                         {file.file_type === "video" && file.duration && (
                           <span className="text-xs text-muted-foreground">{formatDuration(file.duration)}</span>
                         )}
@@ -507,11 +626,13 @@ export default function MediaPage() {
                         </DialogTrigger>
                       </Dialog>
 
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={file.blob_url} download={file.original_filename}>
-                          <Download className="h-3 w-3" />
-                        </a>
-                      </Button>
+                      {file.file_type !== "google-slides" && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={file.blob_url} download={file.original_filename}>
+                            <Download className="h-3 w-3" />
+                          </a>
+                        </Button>
+                      )}
 
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -551,12 +672,17 @@ export default function MediaPage() {
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="font-medium truncate">{file.original_filename}</h4>
                         <Badge variant="secondary" className="text-xs">
-                          {file.file_type === "document" ? getDocumentTypeName(file.mime_type) : file.file_type}
+                          {file.file_type === "document"
+                            ? getDocumentTypeName(file.mime_type)
+                            : file.file_type === "google-slides"
+                              ? "Google Slides"
+                              : file.file_type}
                         </Badge>
                       </div>
 
                       <p className="text-sm text-muted-foreground mb-2">
-                        {formatFileSize(file.file_size)} • {new Date(file.created_at).toLocaleDateString()}
+                        {file.file_type !== "google-slides" && formatFileSize(file.file_size)} •{" "}
+                        {new Date(file.created_at).toLocaleDateString()}
                         {file.file_type === "video" && file.duration && <> • {formatDuration(file.duration)}</>}
                       </p>
 
@@ -584,11 +710,13 @@ export default function MediaPage() {
                         </DialogTrigger>
                       </Dialog>
 
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={file.blob_url} download={file.original_filename}>
-                          <Download className="h-4 w-4" />
-                        </a>
-                      </Button>
+                      {file.file_type !== "google-slides" && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={file.blob_url} download={file.original_filename}>
+                            <Download className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
 
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -626,14 +754,16 @@ export default function MediaPage() {
       {/* File Preview Dialog */}
       {selectedFile && (
         <Dialog open={!!selectedFile} onOpenChange={() => setSelectedFile(null)}>
-          <DialogContent className="max-w-4xl">
+          <DialogContent className="max-w-6xl max-h-[90vh]">
             <DialogHeader>
               <DialogTitle>{selectedFile.original_filename}</DialogTitle>
               <DialogDescription>
                 {selectedFile.file_type === "document"
                   ? getDocumentTypeName(selectedFile.mime_type)
-                  : selectedFile.file_type}{" "}
-                • {formatFileSize(selectedFile.file_size)}
+                  : selectedFile.file_type === "google-slides"
+                    ? "Google Slides"
+                    : selectedFile.file_type}{" "}
+                {selectedFile.file_type !== "google-slides" && <>• {formatFileSize(selectedFile.file_size)}</>}
                 {selectedFile.width && selectedFile.height && selectedFile.file_type !== "document" && (
                   <>
                     {" "}
@@ -659,6 +789,15 @@ export default function MediaPage() {
                 <video src={selectedFile.blob_url} controls autoPlay muted className="w-full max-h-96 rounded-lg">
                   Your browser does not support the video tag.
                 </video>
+              ) : selectedFile.file_type === "google-slides" ? (
+                <div className="w-full h-96 rounded-lg overflow-hidden">
+                  <iframe
+                    src={selectedFile.embed_url}
+                    className="w-full h-full border-0"
+                    allowFullScreen
+                    title={selectedFile.original_filename}
+                  />
+                </div>
               ) : selectedFile.file_type === "document" ? (
                 <div className="flex flex-col items-center justify-center h-64 bg-muted rounded-lg">
                   <div className="text-center">
@@ -718,8 +857,12 @@ export default function MediaPage() {
                   <p className="text-muted-foreground">{new Date(selectedFile.created_at).toLocaleString()}</p>
                 </div>
                 <div>
-                  <Label className="font-medium">File Type</Label>
-                  <p className="text-muted-foreground">{selectedFile.mime_type}</p>
+                  <Label className="font-medium">
+                    {selectedFile.file_type === "google-slides" ? "Source" : "File Type"}
+                  </Label>
+                  <p className="text-muted-foreground">
+                    {selectedFile.file_type === "google-slides" ? "Google Slides" : selectedFile.mime_type}
+                  </p>
                 </div>
               </div>
             </div>
