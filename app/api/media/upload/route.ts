@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { put } from "@vercel/blob"
 import { sql } from "@/lib/database"
-import { sessionQueries } from "@/lib/database"
+import { getUserFromSession } from "@/lib/auth"
 import sharp from "sharp"
 
 const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
@@ -20,17 +20,10 @@ const ALLOWED_TYPES = [
 
 export async function POST(request: NextRequest) {
   try {
-    // Get session token from cookie
-    const sessionToken = request.cookies.get("session_token")?.value
-
-    if (!sessionToken) {
+    // Get user from session
+    const user = await getUserFromSession(request)
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    // Verify session and get user
-    const session = await sessionQueries.findByToken(sessionToken)
-    if (!session) {
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 })
     }
 
     const formData = await request.formData()
@@ -97,7 +90,7 @@ export async function POST(request: NextRequest) {
         user_id, filename, original_filename, file_type, file_size,
         mime_type, blob_url, thumbnail_url, width, height
       ) VALUES (
-        ${session.id}, ${filename}, ${file.name}, ${fileType}, ${file.size},
+        ${user.id}, ${filename}, ${file.name}, ${fileType}, ${file.size},
         ${file.type}, ${blob.url}, ${thumbnailUrl}, ${width}, ${height}
       )
       RETURNING id, filename, original_filename, file_type, file_size, mime_type,

@@ -1,20 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/database"
-import { sessionQueries } from "@/lib/database"
+import { getUserFromSession } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
   try {
-    // Get session token from cookie
-    const sessionToken = request.cookies.get("session_token")?.value
-
-    if (!sessionToken) {
+    // Get user from session
+    const user = await getUserFromSession(request)
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    // Verify session and get user
-    const session = await sessionQueries.findByToken(sessionToken)
-    if (!session) {
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 })
     }
 
     // Get media files for the user
@@ -24,7 +17,7 @@ export async function GET(request: NextRequest) {
         blob_url, thumbnail_url, duration, width, height, tags, description,
         is_active, created_at, updated_at
       FROM media 
-      WHERE user_id = ${session.id} AND is_active = true
+      WHERE user_id = ${user.id} AND is_active = true
       ORDER BY created_at DESC
     `
 
