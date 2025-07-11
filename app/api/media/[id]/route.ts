@@ -1,7 +1,30 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { del } from "@vercel/blob"
 import { getUserFromSession } from "@/lib/auth"
 import { sql } from "@/lib/database"
+import { del } from "@vercel/blob"
+
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getUserFromSession(request)
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const file = await sql`
+      SELECT * FROM media 
+      WHERE id = ${params.id} AND user_id = ${user.id} AND is_active = true
+    `
+
+    if (file.length === 0) {
+      return NextResponse.json({ error: "File not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true, file: file[0] })
+  } catch (error) {
+    console.error("Media fetch error:", error)
+    return NextResponse.json({ error: "Failed to fetch media file" }, { status: 500 })
+  }
+}
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -10,44 +33,71 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const fileId = params.id
-
-    // Get file details first
-    const fileResult = await sql`
-      SELECT blob_url, thumbnail_url, original_filename
-      FROM media 
-      WHERE id = ${fileId} AND user_id = ${user.id}
+    // Get file info before deletion
+    const file = await sql`
+      SELECT blob_url, thumbnail_url FROM media 
+      WHERE id = ${params.id} AND user_id = ${user.id} AND is_active = true
     `
 
-    if (fileResult.length === 0) {
+    if (file.length === 0) {
       return NextResponse.json({ error: "File not found" }, { status: 404 })
     }
 
-    const file = fileResult[0]
+    // Soft delete in database
+    await sql`
+      UPDATE media 
+      SET is_active = false, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${params.id} AND user_id = ${user.id}
+    `
 
     // Delete from Vercel Blob
     try {
-      await del(file.blob_url)
-      if (file.thumbnail_url) {
-        await del(file.thumbnail_url)
+      if (file[0].blob_url) {
+        await del(file[0].blob_url)
+      }
+      if (file[0].thumbnail_url) {
+        await del(file[0].thumbnail_url)
       }
     } catch (blobError) {
       console.error("Error deleting from blob storage:", blobError)
-      // Continue with database deletion even if blob deletion fails
+      // Continue even if blob deletion fails
     }
 
-    // Delete from database
-    await sql`
-      DELETE FROM media 
-      WHERE id = ${fileId} AND user_id = ${user.id}
+    return NextResponse.json({ success: true, message: "File deleted successfully" })
+  } catch (error) {
+    console.error("Media deletion error:", error)
+    return NextResponse.json({ error: "Failed to delete media file" }, { status: 500 })
+  }
+}
+
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getUserFromSession(request)
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { tags, description } = body
+
+    // Update file metadata
+    const result = await sql`
+      UPDATE media 
+      SET 
+        tags = ${tags || null},
+        description = ${description || null},
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${params.id} AND user_id = ${user.id} AND is_active = true
+      RETURNING *
     `
 
-    return NextResponse.json({
-      success: true,
-      message: "File deleted successfully",
-    })
+    if (result.length === 0) {
+      return NextResponse.json({ error: "File not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true, file: result[0] })
   } catch (error) {
-    console.error("Delete error:", error)
-    return NextResponse.json({ error: "Failed to delete file" }, { status: 500 })
+    console.error("Media update error:", error)
+    return NextResponse.json({ error: "Failed to update media file" }, { status: 500 })
   }
 }

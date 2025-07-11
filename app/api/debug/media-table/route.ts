@@ -17,28 +17,30 @@ export async function GET() {
         {
           success: false,
           error: "Media table does not exist",
+          tableExists: false,
         },
         { status: 404 },
       )
     }
 
     // Get table structure
-    const tableStructure = await sql`
+    const structure = await sql`
       SELECT column_name, data_type, is_nullable, column_default
       FROM information_schema.columns
       WHERE table_name = 'media'
       ORDER BY ordinal_position;
     `
 
-    // Get sample data count
-    const dataCount = await sql`
-      SELECT COUNT(*) as total FROM media;
+    // Get total file count
+    const totalFiles = await sql`
+      SELECT COUNT(*) as count FROM media WHERE is_active = true;
     `
 
     // Get recent uploads
     const recentUploads = await sql`
-      SELECT id, original_filename, file_type, file_size, created_at, user_id
+      SELECT id, filename, original_filename, file_type, file_size, created_at
       FROM media 
+      WHERE is_active = true
       ORDER BY created_at DESC 
       LIMIT 5;
     `
@@ -46,9 +48,9 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       tableExists: true,
-      structure: tableStructure,
-      totalFiles: dataCount[0].total,
-      recentUploads: recentUploads,
+      structure,
+      totalFiles: totalFiles[0].count,
+      recentUploads,
       timestamp: new Date().toISOString(),
     })
   } catch (error) {

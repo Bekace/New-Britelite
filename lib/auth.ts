@@ -266,18 +266,9 @@ export const authService = {
 
 export const getUserFromSession = async (request: NextRequest): Promise<User | null> => {
   try {
-    // Try multiple cookie names to find the session token
-    const sessionToken =
-      request.cookies.get("session-token")?.value ||
-      request.cookies.get("session_token")?.value ||
-      request.cookies.get("sessionToken")?.value ||
-      request.cookies.get("auth-token")?.value ||
-      request.cookies.get("token")?.value
+    // Get the session cookie - this matches what /api/auth/me uses
+    const sessionToken = request.cookies.get("session")?.value
 
-    console.log(
-      "getUserFromSession - Available cookies:",
-      request.cookies.getAll().map((c) => c.name),
-    )
     console.log("getUserFromSession - Session token found:", !!sessionToken)
 
     if (!sessionToken) {
