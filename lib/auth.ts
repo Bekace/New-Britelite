@@ -144,16 +144,22 @@ export const authService = {
 
   login: async (email: string, password: string): Promise<AuthResult> => {
     try {
+      console.log("Login attempt for email:", email)
+
       const user = await userQueries.findByEmail(email)
       if (!user) {
+        console.log("User not found for email:", email)
         return { success: false, error: "Invalid email or password" }
       }
 
+      console.log("User found, verifying password...")
       const isValidPassword = await passwordUtils.verify(password, user.password_hash)
       if (!isValidPassword) {
+        console.log("Invalid password for user:", email)
         return { success: false, error: "Invalid email or password" }
       }
 
+      console.log("Password valid, creating session...")
       const sessionToken = tokenUtils.generateSessionToken()
       const expiresAt = new Date(Date.now() + SESSION_DURATION)
 
@@ -167,6 +173,7 @@ export const authService = {
         ...userWithoutSensitiveData
       } = user
 
+      console.log("Login successful for user:", email)
       return {
         success: true,
         user: userWithoutSensitiveData as User,
