@@ -4,221 +4,226 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
-import { CheckCircle, XCircle, AlertCircle, Database, Package, Settings } from "lucide-react"
+import { CheckCircle, XCircle, AlertCircle } from "lucide-react"
 
-interface DebugResult {
-  timestamp: string
-  steps: Array<{
-    step: number
-    name: string
-    status: "success" | "failed"
-    result?: any
-    error?: string
-    stack?: string
-  }>
-  environment: {
-    hasJwtSecret: boolean
-    hasDatabaseUrl: boolean
-    nodeEnv: string
-  }
+interface DebugStep {
+  id: string
+  name: string
+  status: "pending" | "success" | "failed" | "running"
+  result?: any
+  error?: string
 }
 
 export default function PlansDebugPage() {
-  const [debugResult, setDebugResult] = useState<DebugResult | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [debugSteps, setDebugSteps] = useState<DebugStep[]>([
+    { id: "connection", name: "Database Connection Test", status: "pending" },
+    { id: "table-exists", name: "Plans Table Existence Check", status: "pending" },
+    { id: "all-tables", name: "List All Database Tables", status: "pending" },
+    { id: "table-structure", name: "Plans Table Structure", status: "pending" },
+    { id: "total-count", name: "Total Plans Count", status: "pending" },
+    { id: "active-count", name: "Active Plans Count", status: "pending" },
+    { id: "sample-data", name: "Sample Plans Data", status: "pending" },
+    { id: "api-query", name: "API Query Test", status: "pending" },
+    { id: "features-table", name: "Plan Features Table Check", status: "pending" },
+    { id: "assignments-table", name: "Plan Feature Assignments Table Check", status: "pending" },
+    { id: "complex-query", name: "Complex Query with Features Test", status: "pending" },
+  ])
+  const [isRunning, setIsRunning] = useState(false)
+  const [debugStartTime, setDebugStartTime] = useState<Date | null>(null)
+
+  const updateStep = (id: string, updates: Partial<DebugStep>) => {
+    setDebugSteps((prev) => prev.map((step) => (step.id === id ? { ...step, ...updates } : step)))
+  }
 
   const runDebug = async () => {
-    setIsLoading(true)
+    setIsRunning(true)
+    setDebugStartTime(new Date())
+
+    // Reset all steps
+    setDebugSteps((prev) =>
+      prev.map((step) => ({ ...step, status: "pending" as const, result: undefined, error: undefined })),
+    )
+
     try {
       const response = await fetch("/api/debug/plans", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       })
 
-      const result = await response.json()
-      setDebugResult(result)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error("No response body")
+
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+
+        for (const line of lines) {
+          if (line.trim() && line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (data.step) {
+                updateStep(data.step, {
+                  status: data.status,
+                  result: data.result,
+                  error: data.error,
+                })
+              }
+            } catch (e) {
+              console.error("Failed to parse SSE data:", e)
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error("Debug failed:", error)
-      setDebugResult({
-        timestamp: new Date().toISOString(),
-        steps: [
-          {
-            step: 1,
-            name: "Debug Request",
-            status: "failed",
-            error: error instanceof Error ? error.message : "Unknown error",
-          },
-        ],
-        environment: {
-          hasJwtSecret: false,
-          hasDatabaseUrl: false,
-          nodeEnv: "unknown",
-        },
-      })
+      // Mark all pending steps as failed
+      setDebugSteps((prev) =>
+        prev.map((step) =>
+          step.status === "pending" || step.status === "running"
+            ? { ...step, status: "failed", error: error instanceof Error ? error.message : "Unknown error" }
+            : step,
+        ),
+      )
     } finally {
-      setIsLoading(false)
+      setIsRunning(false)
     }
   }
 
-  const getStatusIcon = (status: "success" | "failed") => {
-    return status === "success" ? (
-      <CheckCircle className="h-5 w-5 text-green-500" />
-    ) : (
-      <XCircle className="h-5 w-5 text-red-500" />
-    )
+  const getStatusIcon = (status: DebugStep["status"]) => {
+    switch (status) {
+      case "success":
+        return <CheckCircle className="h-5 w-5 text-green-500" />
+      case "failed":
+        return <XCircle className="h-5 w-5 text-red-500" />
+      case "running":
+        return <AlertCircle className="h-5 w-5 text-yellow-500 animate-pulse" />
+      default:
+        return <div className="h-5 w-5 rounded-full border-2 border-gray-300" />
+    }
   }
 
-  const getStatusColor = (status: "success" | "failed") => {
-    return status === "success" ? "text-green-700 bg-green-50" : "text-red-700 bg-red-50"
+  const getStatusBadge = (status: DebugStep["status"]) => {
+    switch (status) {
+      case "success":
+        return (
+          <Badge variant="default" className="bg-green-500">
+            success
+          </Badge>
+        )
+      case "failed":
+        return <Badge variant="destructive">failed</Badge>
+      case "running":
+        return <Badge variant="secondary">running</Badge>
+      default:
+        return <Badge variant="outline">pending</Badge>
+    }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Plans Debug Tool</h1>
-          <p className="text-gray-600">Debug why plans are not showing up in the application</p>
-        </div>
+    <div className="container mx-auto p-6 max-w-4xl">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold mb-2">Plans Debug</h1>
+        <p className="text-muted-foreground">Detailed breakdown of each plans loading step</p>
+      </div>
 
-        {/* Debug Controls */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Debug Controls
-            </CardTitle>
-            <CardDescription>Run comprehensive plans debugging to identify issues</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={runDebug} disabled={isLoading} className="w-full">
-              {isLoading ? "Running Debug..." : "Run Plans Debug"}
-            </Button>
-          </CardContent>
-        </Card>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Debug Controls</CardTitle>
+          <CardDescription>Run comprehensive plans debugging to identify loading issues</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={runDebug} disabled={isRunning} className="w-full">
+            {isRunning ? "Running Debug..." : "Run Plans Debug"}
+          </Button>
+        </CardContent>
+      </Card>
 
-        {/* Debug Results */}
-        {debugResult && (
-          <div className="space-y-6">
-            {/* Environment Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Database className="h-5 w-5" />
-                  Environment Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="font-medium">JWT Secret</span>
-                    <Badge variant={debugResult.environment.hasJwtSecret ? "default" : "destructive"}>
-                      {debugResult.environment.hasJwtSecret ? "Present" : "Missing"}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="font-medium">Database URL</span>
-                    <Badge variant={debugResult.environment.hasDatabaseUrl ? "default" : "destructive"}>
-                      {debugResult.environment.hasDatabaseUrl ? "Present" : "Missing"}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="font-medium">Environment</span>
-                    <Badge variant="outline">{debugResult.environment.nodeEnv}</Badge>
+      <div className="space-y-4">
+        {debugSteps.map((step, index) => (
+          <Card key={step.id}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {getStatusIcon(step.status)}
+                  <div>
+                    <CardTitle className="text-lg">
+                      Step {index + 1}: {step.name}
+                    </CardTitle>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+                {getStatusBadge(step.status)}
+              </div>
+            </CardHeader>
 
-            {/* Debug Steps */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  Plans Debug Steps
-                </CardTitle>
-                <CardDescription>Detailed breakdown of each plans loading step</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {debugResult.steps.map((step, index) => (
-                  <div key={index} className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        {getStatusIcon(step.status)}
-                        <div>
-                          <h3 className="font-semibold">
-                            Step {step.step}: {step.name}
-                          </h3>
-                        </div>
-                      </div>
-                      <Badge className={getStatusColor(step.status)}>{step.status}</Badge>
-                    </div>
+            {(step.result || step.error) && (
+              <CardContent className="pt-0">
+                <Separator className="mb-4" />
 
-                    {step.result && (
-                      <div className="ml-8">
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                          <h4 className="font-medium text-green-800 mb-2">Result:</h4>
-                          <pre className="text-sm text-green-700 whitespace-pre-wrap overflow-x-auto">
-                            {typeof step.result === "string" ? step.result : JSON.stringify(step.result, null, 2)}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
-
-                    {step.error && (
-                      <div className="ml-8">
-                        <Alert variant="destructive">
-                          <AlertCircle className="h-4 w-4" />
-                          <AlertDescription>
-                            <div className="space-y-2">
-                              <div>
-                                <strong>Error:</strong> {step.error}
-                              </div>
-                              {step.stack && (
-                                <details className="mt-2">
-                                  <summary className="cursor-pointer text-sm font-medium">View Stack Trace</summary>
-                                  <pre className="mt-2 text-xs bg-red-50 p-2 rounded border overflow-x-auto">
-                                    {step.stack}
-                                  </pre>
-                                </details>
-                              )}
-                            </div>
-                          </AlertDescription>
-                        </Alert>
-                      </div>
-                    )}
-
-                    {index < debugResult.steps.length - 1 && <Separator />}
+                {step.status === "success" && step.result && (
+                  <div>
+                    <h4 className="font-semibold mb-2 text-green-700">Result:</h4>
+                    <pre className="bg-green-50 p-3 rounded-md text-sm overflow-x-auto border border-green-200">
+                      {typeof step.result === "string" ? step.result : JSON.stringify(step.result, null, 2)}
+                    </pre>
                   </div>
-                ))}
+                )}
+
+                {step.status === "failed" && step.error && (
+                  <div>
+                    <h4 className="font-semibold mb-2 text-red-700">Error:</h4>
+                    <pre className="bg-red-50 p-3 rounded-md text-sm overflow-x-auto border border-red-200">
+                      {step.error}
+                    </pre>
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-sm text-red-600 hover:text-red-800">
+                        View Stack Trace
+                      </summary>
+                      <pre className="bg-red-50 p-3 rounded-md text-xs overflow-x-auto border border-red-200 mt-2">
+                        {step.error}
+                      </pre>
+                    </details>
+                  </div>
+                )}
               </CardContent>
-            </Card>
+            )}
+          </Card>
+        ))}
+      </div>
 
-            {/* Timestamp */}
-            <div className="text-center text-sm text-gray-500">
-              Debug completed at: {new Date(debugResult.timestamp).toLocaleString()}
-            </div>
-          </div>
-        )}
-
-        {/* Instructions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>How to Use This Debug Tool</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-gray-600">
-            <p>1. Click "Run Plans Debug" to test all plans loading steps</p>
-            <p>2. Review each step to identify where the failure occurs</p>
-            <p>3. Check database connectivity, table names, and query structure</p>
-            <p>4. Look for specific error messages that indicate the root cause</p>
-            <p>5. Use the results to fix the exact issue causing plans not to load</p>
+      {debugStartTime && (
+        <Card className="mt-6">
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Debug completed at: {debugStartTime.toLocaleString()}</p>
           </CardContent>
         </Card>
-      </div>
+      )}
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>How to Use This Debug Tool</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ol className="list-decimal list-inside space-y-2 text-sm">
+            <li>Click "Run Plans Debug" to test all plans loading steps</li>
+            <li>Review each step to identify where the failure occurs</li>
+            <li>Check database connectivity, table names, and query structure</li>
+            <li>Look for specific error messages that indicate the root cause</li>
+            <li>Use the results to fix the exact issue causing plans not to load</li>
+          </ol>
+        </CardContent>
+      </Card>
     </div>
   )
 }

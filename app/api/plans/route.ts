@@ -8,7 +8,12 @@ export async function GET(request: NextRequest) {
     // Fetch all active plans with their assigned features
     const plans = await sql`
       SELECT 
-        p.id, p.name, p.description, p.price, p.billing_cycle,
+        p.id, p.name, p.description, 
+        CASE 
+          WHEN p.billing_cycle = 'yearly' THEN p.price_yearly 
+          ELSE p.price_monthly 
+        END as price,
+        p.billing_cycle,
         p.max_screens, p.max_storage_gb, p.max_playlists,
         p.is_active, p.created_at,
         COALESCE(
@@ -30,10 +35,14 @@ export async function GET(request: NextRequest) {
       LEFT JOIN plan_feature_assignments pfa ON p.id = pfa.plan_id AND pfa.is_enabled = true
       LEFT JOIN plan_features pf ON pfa.feature_id = pf.id AND pf.is_active = true
       WHERE p.is_active = true 
-      GROUP BY p.id, p.name, p.description, p.price, p.billing_cycle,
+      GROUP BY p.id, p.name, p.description, p.price_monthly, p.price_yearly, p.billing_cycle,
                p.max_screens, p.max_storage_gb, p.max_playlists,
                p.is_active, p.created_at
-      ORDER BY p.price ASC
+      ORDER BY 
+        CASE 
+          WHEN p.billing_cycle = 'yearly' THEN p.price_yearly 
+          ELSE p.price_monthly 
+        END ASC
     `
 
     console.log("Plans with features fetched successfully:", plans.length)
@@ -54,12 +63,21 @@ export async function GET(request: NextRequest) {
       console.log("Attempting fallback query without features...")
       const basicPlans = await sql`
         SELECT 
-          id, name, description, price, billing_cycle,
+          id, name, description, 
+          CASE 
+            WHEN billing_cycle = 'yearly' THEN price_yearly 
+            ELSE price_monthly 
+          END as price,
+          billing_cycle,
           max_screens, max_storage_gb, max_playlists,
           is_active, created_at
         FROM plans 
         WHERE is_active = true 
-        ORDER BY price ASC
+        ORDER BY 
+          CASE 
+            WHEN billing_cycle = 'yearly' THEN price_yearly 
+            ELSE price_monthly 
+          END ASC
       `
 
       console.log("Basic plans fetched successfully:", basicPlans.length)
