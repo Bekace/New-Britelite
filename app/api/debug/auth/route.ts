@@ -1,153 +1,185 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { userQueries, sessionQueries } from "@/lib/database"
-import { passwordUtils, tokenUtils } from "@/lib/auth"
+import { sql } from "@/lib/database"
+import bcrypt from "bcryptjs"
+import crypto from "crypto"
 
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json()
 
-    const debugResults = {
+    const debugResult = {
       timestamp: new Date().toISOString(),
-      email: email,
+      email,
       steps: [] as any[],
       environment: {
         hasJwtSecret: !!process.env.JWT_SECRET,
         hasDatabaseUrl: !!process.env.DATABASE_URL,
-        nodeEnv: process.env.NODE_ENV,
+        nodeEnv: process.env.NODE_ENV || "development",
       },
     }
 
     // Step 1: Test database connection
     try {
-      debugResults.steps.push({
+      await sql`SELECT 1`
+      debugResult.steps.push({
         step: 1,
         name: "Database Connection Test",
-        status: "testing",
+        status: "success",
+        result: "Database connection successful",
       })
-
-      // Simple query to test connection
-      const testQuery = await userQueries.findByEmail("test@nonexistent.com")
-      debugResults.steps[0].status = "success"
-      debugResults.steps[0].result = "Database connection successful"
-    } catch (error) {
-      debugResults.steps[0].status = "failed"
-      debugResults.steps[0].error = error instanceof Error ? error.message : "Unknown error"
-      debugResults.steps[0].stack = error instanceof Error ? error.stack : undefined
+    } catch (error: any) {
+      debugResult.steps.push({
+        step: 1,
+        name: "Database Connection Test",
+        status: "failed",
+        error: error.message,
+        stack: error.stack,
+      })
+      return NextResponse.json(debugResult)
     }
 
-    // Step 2: User lookup
+    // Step 2: Test user lookup
+    let user: any = null
     try {
-      debugResults.steps.push({
+      const result = await sql`
+        SELECT u.*, p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
+        FROM users u
+        LEFT JOIN plans p ON u.plan_id = p.id
+        WHERE u.email = ${email} AND u.is_active = true
+      `
+      user = result[0] || null
+
+      debugResult.steps.push({
         step: 2,
         name: "User Lookup",
-        status: "testing",
+        status: user ? "success" : "failed",
+        result: user
+          ? {
+              userFound: true,
+              userId: user.id,
+              isEmailVerified: user.is_email_verified,
+              isActive: user.is_active,
+              role: user.role,
+              hasPasswordHash: !!user.password_hash,
+              passwordHashLength: user.password_hash?.length || 0,
+            }
+          : {
+              userFound: false,
+              message: "No user found with this email",
+            },
       })
 
-      const user = await userQueries.findByEmail(email)
-      debugResults.steps[1].status = user ? "success" : "not_found"
-      debugResults.steps[1].result = {
-        userFound: !!user,
-        userId: user?.id,
-        isEmailVerified: user?.is_email_verified,
-        isActive: user?.is_active,
-        role: user?.role,
-        hasPasswordHash: !!user?.password_hash,
-        passwordHashLength: user?.password_hash?.length,
+      if (!user) {
+        return NextResponse.json(debugResult)
       }
-    } catch (error) {
-      debugResults.steps[1].status = "failed"
-      debugResults.steps[1].error = error instanceof Error ? error.message : "Unknown error"
-      debugResults.steps[1].stack = error instanceof Error ? error.stack : undefined
+    } catch (error: any) {
+      debugResult.steps.push({
+        step: 2,
+        name: "User Lookup",
+        status: "failed",
+        error: error.message,
+        stack: error.stack,
+      })
+      return NextResponse.json(debugResult)
     }
 
-    // Step 3: Password verification (only if user found)
-    if (debugResults.steps[1]?.result?.userFound && password) {
-      try {
-        debugResults.steps.push({
-          step: 3,
-          name: "Password Verification",
-          status: "testing",
-        })
-
-        const user = await userQueries.findByEmail(email)
-        if (user?.password_hash) {
-          const isValidPassword = await passwordUtils.verify(password, user.password_hash)
-          debugResults.steps[2].status = isValidPassword ? "success" : "failed"
-          debugResults.steps[2].result = {
-            passwordValid: isValidPassword,
-            hashFormat: user.password_hash.startsWith("$2") ? "bcrypt" : "unknown",
-          }
-        } else {
-          debugResults.steps[2].status = "failed"
-          debugResults.steps[2].error = "No password hash found"
-        }
-      } catch (error) {
-        debugResults.steps[2].status = "failed"
-        debugResults.steps[2].error = error instanceof Error ? error.message : "Unknown error"
-        debugResults.steps[2].stack = error instanceof Error ? error.stack : undefined
-      }
-    }
-
-    // Step 4: Session token generation
+    // Step 3: Test password verification
     try {
-      debugResults.steps.push({
+      const isValidPassword = await bcrypt.compare(password, user.password_hash)
+
+      debugResult.steps.push({
+        step: 3,
+        name: "Password Verification",
+        status: isValidPassword ? "success" : "failed",
+        result: isValidPassword
+          ? {
+              passwordValid: true,
+              hashFormat: "bcrypt",
+            }
+          : {
+              passwordValid: false,
+              message: "Password does not match stored hash",
+            },
+      })
+
+      if (!isValidPassword) {
+        return NextResponse.json(debugResult)
+      }
+    } catch (error: any) {
+      debugResult.steps.push({
+        step: 3,
+        name: "Password Verification",
+        status: "failed",
+        error: error.message,
+        stack: error.stack,
+      })
+      return NextResponse.json(debugResult)
+    }
+
+    // Step 4: Test session token generation
+    let sessionToken: string
+    try {
+      sessionToken = crypto.randomBytes(32).toString("hex")
+
+      debugResult.steps.push({
         step: 4,
         name: "Session Token Generation",
-        status: "testing",
+        status: "success",
+        result: {
+          tokenGenerated: true,
+          tokenLength: sessionToken.length,
+        },
+      })
+    } catch (error: any) {
+      debugResult.steps.push({
+        step: 4,
+        name: "Session Token Generation",
+        status: "failed",
+        error: error.message,
+        stack: error.stack,
+      })
+      return NextResponse.json(debugResult)
+    }
+
+    // Step 5: Test session creation
+    try {
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+
+      const sessionResult = await sql`
+        INSERT INTO sessions (user_id, token, expires_at)
+        VALUES (${user.id}, ${sessionToken}, ${expiresAt.toISOString()})
+        RETURNING id, token, expires_at
+      `
+
+      debugResult.steps.push({
+        step: 5,
+        name: "Session Creation Test",
+        status: "success",
+        result: {
+          sessionCreated: true,
+          sessionId: sessionResult[0].id,
+        },
       })
 
-      const sessionToken = tokenUtils.generateSessionToken()
-      debugResults.steps[debugResults.steps.length - 1].status = "success"
-      debugResults.steps[debugResults.steps.length - 1].result = {
-        tokenGenerated: !!sessionToken,
-        tokenLength: sessionToken.length,
-      }
-    } catch (error) {
-      debugResults.steps[debugResults.steps.length - 1].status = "failed"
-      debugResults.steps[debugResults.steps.length - 1].error = error instanceof Error ? error.message : "Unknown error"
+      // Clean up test session
+      await sql`DELETE FROM sessions WHERE token = ${sessionToken}`
+    } catch (error: any) {
+      debugResult.steps.push({
+        step: 5,
+        name: "Session Creation Test",
+        status: "failed",
+        error: error.message,
+        stack: error.stack,
+      })
     }
 
-    // Step 5: Session creation test (only if user found) - Fixed to use correct table
-    if (debugResults.steps[1]?.result?.userFound) {
-      try {
-        debugResults.steps.push({
-          step: 5,
-          name: "Session Creation Test",
-          status: "testing",
-        })
-
-        const user = await userQueries.findByEmail(email)
-        if (user) {
-          const sessionToken = tokenUtils.generateSessionToken()
-          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-
-          const session = await sessionQueries.create(user.id, sessionToken, expiresAt)
-          debugResults.steps[debugResults.steps.length - 1].status = "success"
-          debugResults.steps[debugResults.steps.length - 1].result = {
-            sessionCreated: !!session,
-            sessionId: session?.id,
-          }
-
-          // Clean up test session
-          if (session) {
-            await sessionQueries.delete(sessionToken)
-          }
-        }
-      } catch (error) {
-        debugResults.steps[debugResults.steps.length - 1].status = "failed"
-        debugResults.steps[debugResults.steps.length - 1].error =
-          error instanceof Error ? error.message : "Unknown error"
-        debugResults.steps[debugResults.steps.length - 1].stack = error instanceof Error ? error.stack : undefined
-      }
-    }
-
-    return NextResponse.json(debugResults)
-  } catch (error) {
+    return NextResponse.json(debugResult)
+  } catch (error: any) {
     return NextResponse.json(
       {
-        error: "Debug test failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
+        error: "Debug process failed",
+        message: error.message,
+        stack: error.stack,
       },
       { status: 500 },
     )

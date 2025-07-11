@@ -1,137 +1,63 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/database"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const debugResults = {
-      timestamp: new Date().toISOString(),
-      tests: [] as any[],
-      environment: {
-        hasDatabaseUrl: !!process.env.DATABASE_URL,
-        databaseUrlLength: process.env.DATABASE_URL?.length,
-        nodeEnv: process.env.NODE_ENV,
-      },
-    }
+    // Test basic connection
+    const connectionTest = await sql`SELECT NOW() as current_time`
 
-    // Test 1: Basic connection
+    // Check table existence
+    const tables = await sql`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name
+    `
+
+    // Check sessions table structure
+    let sessionsStructure = null
     try {
-      debugResults.tests.push({
-        test: "Basic Connection",
-        status: "testing",
-      })
-
-      const result = await sql`SELECT 1 as test`
-      debugResults.tests[0].status = "success"
-      debugResults.tests[0].result = result[0]
-    } catch (error) {
-      debugResults.tests[0].status = "failed"
-      debugResults.tests[0].error = error instanceof Error ? error.message : "Unknown error"
-    }
-
-    // Test 2: Check tables exist
-    try {
-      debugResults.tests.push({
-        test: "Table Structure Check",
-        status: "testing",
-      })
-
-      const tables = await sql`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name IN ('users', 'user_sessions', 'plans', 'audit_logs')
-        ORDER BY table_name
+      sessionsStructure = await sql`
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns 
+        WHERE table_name = 'sessions' 
+        ORDER BY ordinal_position
       `
-
-      debugResults.tests[1].status = "success"
-      debugResults.tests[1].result = {
-        tablesFound: tables.map((t: any) => t.table_name),
-        expectedTables: ["users", "user_sessions", "plans", "audit_logs"],
-      }
     } catch (error) {
-      debugResults.tests[1].status = "failed"
-      debugResults.tests[1].error = error instanceof Error ? error.message : "Unknown error"
+      sessionsStructure = { error: "Sessions table not found or inaccessible" }
     }
 
-    // Test 3: Check users table structure
+    // Check users table structure
+    let usersStructure = null
     try {
-      debugResults.tests.push({
-        test: "Users Table Structure",
-        status: "testing",
-      })
-
-      const columns = await sql`
+      usersStructure = await sql`
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns 
         WHERE table_name = 'users' 
         ORDER BY ordinal_position
       `
-
-      debugResults.tests[2].status = "success"
-      debugResults.tests[2].result = {
-        columns: columns,
-        hasIsActiveColumn: columns.some((c: any) => c.column_name === "is_active"),
-        hasPasswordHashColumn: columns.some((c: any) => c.column_name === "password_hash"),
-        hasEmailColumn: columns.some((c: any) => c.column_name === "email"),
-      }
     } catch (error) {
-      debugResults.tests[2].status = "failed"
-      debugResults.tests[2].error = error instanceof Error ? error.message : "Unknown error"
+      usersStructure = { error: "Users table not found or inaccessible" }
     }
 
-    // Test 4: Check user_sessions table structure
-    try {
-      debugResults.tests.push({
-        test: "User Sessions Table Structure",
-        status: "testing",
-      })
-
-      const columns = await sql`
-        SELECT column_name, data_type, is_nullable
-        FROM information_schema.columns 
-        WHERE table_name = 'user_sessions' 
-        ORDER BY ordinal_position
-      `
-
-      debugResults.tests[3].status = "success"
-      debugResults.tests[3].result = {
-        columns: columns,
-        hasSessionTokenColumn: columns.some((c: any) => c.column_name === "session_token"),
-        hasUserIdColumn: columns.some((c: any) => c.column_name === "user_id"),
-        hasExpiresAtColumn: columns.some((c: any) => c.column_name === "expires_at"),
-      }
-    } catch (error) {
-      debugResults.tests[3].status = "failed"
-      debugResults.tests[3].error = error instanceof Error ? error.message : "Unknown error"
-    }
-
-    // Test 5: Sample user count
-    try {
-      debugResults.tests.push({
-        test: "User Count Check",
-        status: "testing",
-      })
-
-      const userCount = await sql`SELECT COUNT(*) as count FROM users`
-      const activeUserCount = await sql`SELECT COUNT(*) as count FROM users WHERE is_active = true`
-
-      debugResults.tests[4].status = "success"
-      debugResults.tests[4].result = {
-        totalUsers: userCount[0].count,
-        activeUsers: activeUserCount[0].count,
-      }
-    } catch (error) {
-      debugResults.tests[4].status = "failed"
-      debugResults.tests[4].error = error instanceof Error ? error.message : "Unknown error"
-    }
-
-    return NextResponse.json(debugResults)
-  } catch (error) {
+    return NextResponse.json({
+      connection: {
+        status: "success",
+        timestamp: connectionTest[0].current_time,
+      },
+      tables: tables.map((t) => t.table_name),
+      tableStructures: {
+        sessions: sessionsStructure,
+        users: usersStructure,
+      },
+    })
+  } catch (error: any) {
     return NextResponse.json(
       {
-        error: "Database debug test failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
+        connection: {
+          status: "failed",
+          error: error.message,
+        },
       },
       { status: 500 },
     )

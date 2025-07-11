@@ -11,17 +11,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
     }
 
-    // Get user with full profile data including plan information
+    // Get user with full profile data including plan information - using 'sessions' table
     const session = await sql`
       SELECT 
         s.user_id,
         u.id, u.email, u.first_name, u.last_name, u.role, u.is_email_verified,
         u.business_name, u.business_address, u.phone, u.avatar_url, u.created_at,
         p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
-      FROM user_sessions s
+      FROM sessions s
       JOIN users u ON s.user_id = u.id
       LEFT JOIN plans p ON u.plan_id = p.id
-      WHERE s.session_token = ${sessionToken} 
+      WHERE s.token = ${sessionToken} 
         AND s.expires_at > CURRENT_TIMESTAMP
         AND u.is_active = true
     `
