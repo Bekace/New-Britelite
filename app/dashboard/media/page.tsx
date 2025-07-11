@@ -86,6 +86,7 @@ export default function MediaPage() {
   const [addingGoogleSlides, setAddingGoogleSlides] = useState(false)
   const [editDescription, setEditDescription] = useState("")
   const [editTags, setEditTags] = useState("")
+  const [editGoogleSlidesUrl, setEditGoogleSlidesUrl] = useState("")
   const [saving, setSaving] = useState(false)
 
   const fetchFiles = useCallback(async () => {
@@ -231,10 +232,23 @@ export default function MediaPage() {
     setEditFile(file)
     setEditDescription(file.description || "")
     setEditTags(file.tags ? file.tags.join(", ") : "")
+    setEditGoogleSlidesUrl(file.google_slides_url || "")
   }
 
   const handleSaveEdit = async () => {
     if (!editFile) return
+
+    // Validate Google Slides URL if it's a Google Slides file and URL is provided
+    if (editFile.file_type === "google-slides" && editGoogleSlidesUrl.trim()) {
+      if (!editGoogleSlidesUrl.includes("docs.google.com/presentation")) {
+        toast({
+          title: "Invalid URL",
+          description: "Please enter a valid Google Slides share link",
+          variant: "destructive",
+        })
+        return
+      }
+    }
 
     setSaving(true)
 
@@ -244,15 +258,22 @@ export default function MediaPage() {
         .map((tag) => tag.trim())
         .filter((tag) => tag.length > 0)
 
+      const requestBody: any = {
+        description: editDescription.trim() || null,
+        tags: tagsArray.length > 0 ? tagsArray : null,
+      }
+
+      // Add Google Slides URL if it's a Google Slides file
+      if (editFile.file_type === "google-slides") {
+        requestBody.google_slides_url = editGoogleSlidesUrl.trim() || null
+      }
+
       const response = await fetch(`/api/media/${editFile.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          description: editDescription.trim() || null,
-          tags: tagsArray.length > 0 ? tagsArray : null,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {
@@ -267,6 +288,7 @@ export default function MediaPage() {
       setEditFile(null)
       setEditDescription("")
       setEditTags("")
+      setEditGoogleSlidesUrl("")
 
       toast({
         title: "Success",
@@ -946,10 +968,30 @@ export default function MediaPage() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Edit File</DialogTitle>
-              <DialogDescription>Update the description and tags for "{editFile.original_filename}"</DialogDescription>
+              <DialogDescription>
+                Update the {editFile.file_type === "google-slides" ? "link, " : ""}description and tags for "
+                {editFile.original_filename}"
+              </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
+              {editFile.file_type === "google-slides" && (
+                <div>
+                  <Label htmlFor="edit-google-slides-url">Google Slides URL</Label>
+                  <Textarea
+                    id="edit-google-slides-url"
+                    placeholder="https://docs.google.com/presentation/d/..."
+                    value={editGoogleSlidesUrl}
+                    onChange={(e) => setEditGoogleSlidesUrl(e.target.value)}
+                    disabled={saving}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Update the Google Slides share link to change the presentation
+                  </p>
+                </div>
+              )}
+
               <div>
                 <Label htmlFor="edit-description">Description</Label>
                 <Textarea
