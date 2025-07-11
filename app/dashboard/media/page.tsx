@@ -4,36 +4,25 @@ import type React from "react"
 
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Progress } from "@/components/ui/progress"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
-  Upload,
-  ImageIcon,
-  Video,
-  FileText,
-  Trash2,
-  Download,
-  Eye,
-  Search,
-  Filter,
-  Grid3X3,
-  List,
-  Plus,
-  AlertCircle,
-  CheckCircle,
-} from "lucide-react"
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  DialogFooter,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { toast } from "@/hooks/use-toast"
+import { Upload, Search, Grid, List, Download, Trash2, Eye, FileImage, FileVideo, FileText } from "lucide-react"
 
 interface MediaFile {
   id: string
@@ -47,185 +36,139 @@ interface MediaFile {
   duration?: number
   width?: number
   height?: number
-  tags?: string[]
+  tags: string[]
   description?: string
   is_active: boolean
   created_at: string
   updated_at: string
 }
 
-interface UploadProgress {
-  file: File
-  progress: number
-  status: "uploading" | "success" | "error"
-  error?: string
-}
-
-const ALLOWED_FILE_TYPES = {
-  image: ["image/jpeg", "image/png", "image/gif", "image/webp"],
-  video: ["video/mp4", "video/webm", "video/mov"],
-  document: [
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ],
-}
-
-const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB default
-
 export default function MediaPage() {
-  const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([])
+  const [files, setFiles] = useState<MediaFile[]>([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [uploading, setUploading] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
-  const [filterType, setFilterType] = useState<string>("all")
+  const [filterType, setFilterType] = useState("all")
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [selectedFile, setSelectedFile] = useState<MediaFile | null>(null)
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([])
-  const [dragActive, setDragActive] = useState(false)
-  const [showUploadDialog, setShowUploadDialog] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
 
-  // Load media files
-  const loadMediaFiles = useCallback(async () => {
+  const fetchFiles = useCallback(async () => {
     try {
       const response = await fetch("/api/media")
-      if (response.ok) {
-        const data = await response.json()
-        setMediaFiles(data.media || [])
+      if (!response.ok) {
+        throw new Error("Failed to fetch media files")
       }
+      const data = await response.json()
+      setFiles(data.files || [])
     } catch (error) {
-      console.error("Error loading media files:", error)
+      console.error("Error fetching files:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load media files",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    loadMediaFiles()
-  }, [loadMediaFiles])
+    fetchFiles()
+  }, [fetchFiles])
 
-  // Filter media files
-  const filteredFiles = mediaFiles.filter((file) => {
+  const handleFileUpload = async (selectedFiles: FileList) => {
+    if (!selectedFiles.length) return
+
+    setUploading(true)
+    setUploadProgress(0)
+
+    try {
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i]
+        const formData = new FormData()
+        formData.append("file", file)
+
+        const response = await fetch("/api/media/upload", {
+          method: "POST",
+          body: formData,
+        })
+
+        if (!response.ok) {
+          throw new Error(`Failed to upload ${file.name}`)
+        }
+
+        setUploadProgress(((i + 1) / selectedFiles.length) * 100)
+      }
+
+      toast({
+        title: "Success",
+        description: `${selectedFiles.length} file(s) uploaded successfully`,
+      })
+
+      await fetchFiles()
+    } catch (error) {
+      console.error("Upload error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to upload files",
+        variant: "destructive",
+      })
+    } finally {
+      setUploading(false)
+      setUploadProgress(0)
+    }
+  }
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    const droppedFiles = e.dataTransfer.files
+    if (droppedFiles.length > 0) {
+      handleFileUpload(droppedFiles)
+    }
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+  }, [])
+
+  const deleteFile = async (fileId: string) => {
+    try {
+      const response = await fetch(`/api/media/${fileId}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to delete file")
+      }
+
+      toast({
+        title: "Success",
+        description: "File deleted successfully",
+      })
+
+      await fetchFiles()
+    } catch (error) {
+      console.error("Delete error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete file",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const filteredFiles = files.filter((file) => {
     const matchesSearch =
       file.original_filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
       file.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      file.tags?.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+      file.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()))
 
     const matchesType = filterType === "all" || file.file_type === filterType
 
     return matchesSearch && matchesType
   })
 
-  // Handle file upload
-  const handleFileUpload = async (files: FileList) => {
-    const fileArray = Array.from(files)
-    const validFiles: File[] = []
-    const errors: string[] = []
-
-    // Validate files
-    fileArray.forEach((file) => {
-      const isValidType = Object.values(ALLOWED_FILE_TYPES).flat().includes(file.type)
-      const isValidSize = file.size <= MAX_FILE_SIZE
-
-      if (!isValidType) {
-        errors.push(`${file.name}: Unsupported file type`)
-      } else if (!isValidSize) {
-        errors.push(`${file.name}: File size exceeds 3MB limit`)
-      } else {
-        validFiles.push(file)
-      }
-    })
-
-    if (errors.length > 0) {
-      alert("Upload errors:\n" + errors.join("\n"))
-    }
-
-    if (validFiles.length === 0) return
-
-    // Initialize upload progress
-    const initialProgress: UploadProgress[] = validFiles.map((file) => ({
-      file,
-      progress: 0,
-      status: "uploading",
-    }))
-    setUploadProgress(initialProgress)
-
-    // Upload files
-    for (let i = 0; i < validFiles.length; i++) {
-      const file = validFiles[i]
-      const formData = new FormData()
-      formData.append("file", file)
-
-      try {
-        const response = await fetch("/api/media/upload", {
-          method: "POST",
-          body: formData,
-        })
-
-        if (response.ok) {
-          setUploadProgress((prev) =>
-            prev.map((item, index) => (index === i ? { ...item, progress: 100, status: "success" } : item)),
-          )
-        } else {
-          const error = await response.text()
-          setUploadProgress((prev) =>
-            prev.map((item, index) => (index === i ? { ...item, status: "error", error } : item)),
-          )
-        }
-      } catch (error) {
-        setUploadProgress((prev) =>
-          prev.map((item, index) => (index === i ? { ...item, status: "error", error: "Upload failed" } : item)),
-        )
-      }
-    }
-
-    // Reload media files after upload
-    setTimeout(() => {
-      loadMediaFiles()
-      setUploadProgress([])
-      setShowUploadDialog(false)
-    }, 2000)
-  }
-
-  // Handle drag and drop
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true)
-    } else if (e.type === "dragleave") {
-      setDragActive(false)
-    }
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileUpload(e.dataTransfer.files)
-    }
-  }
-
-  // Delete media file
-  const handleDelete = async (fileId: string) => {
-    if (!confirm("Are you sure you want to delete this file?")) return
-
-    try {
-      const response = await fetch(`/api/media/${fileId}`, {
-        method: "DELETE",
-      })
-
-      if (response.ok) {
-        setMediaFiles((prev) => prev.filter((file) => file.id !== fileId))
-        setSelectedFile(null)
-      }
-    } catch (error) {
-      console.error("Error deleting file:", error)
-    }
-  }
-
-  // Format file size
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes"
     const k = 1024
@@ -234,316 +177,331 @@ export default function MediaPage() {
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
-  // Get file type icon
-  const getFileTypeIcon = (mimeType: string) => {
-    if (mimeType.startsWith("image/")) return <ImageIcon className="h-4 w-4" />
-    if (mimeType.startsWith("video/")) return <Video className="h-4 w-4" />
-    return <FileText className="h-4 w-4" />
+  const getFileIcon = (fileType: string) => {
+    switch (fileType) {
+      case "image":
+        return <FileImage className="h-4 w-4" />
+      case "video":
+        return <FileVideo className="h-4 w-4" />
+      default:
+        return <FileText className="h-4 w-4" />
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading media files...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Media Library</h1>
-          <p className="text-muted-foreground">Manage your images, videos, and documents</p>
+          <p className="text-muted-foreground">Upload and manage your media files</p>
         </div>
-        <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Upload Media
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Upload Media Files</DialogTitle>
-              <DialogDescription>Drag and drop files or click to browse. Max file size: 3MB</DialogDescription>
-            </DialogHeader>
-            <div
-              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                dragActive ? "border-blue-500 bg-blue-50" : "border-gray-300"
-              }`}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-            >
-              <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <p className="text-lg font-medium mb-2">Drop files here</p>
-              <p className="text-sm text-gray-500 mb-4">or click to browse your computer</p>
-              <Input
-                type="file"
-                multiple
-                accept="image/*,video/*,.pdf,.doc,.docx"
-                onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
-                className="hidden"
-                id="file-upload"
-              />
-              <Label htmlFor="file-upload" className="cursor-pointer">
-                <Button variant="outline" asChild>
-                  <span>Browse Files</span>
-                </Button>
-              </Label>
-            </div>
-
-            {/* Upload Progress */}
-            {uploadProgress.length > 0 && (
-              <div className="space-y-2 mt-4">
-                {uploadProgress.map((item, index) => (
-                  <div key={index} className="space-y-1">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="truncate">{item.file.name}</span>
-                      {item.status === "success" && <CheckCircle className="h-4 w-4 text-green-500" />}
-                      {item.status === "error" && <AlertCircle className="h-4 w-4 text-red-500" />}
-                    </div>
-                    <Progress value={item.progress} className="h-2" />
-                    {item.error && <p className="text-xs text-red-500">{item.error}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
       </div>
 
-      {/* Filters and Search */}
+      {/* Upload Area */}
       <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-            <div className="flex flex-1 gap-4 items-center">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+        <CardHeader>
+          <CardTitle>Upload Media Files</CardTitle>
+          <CardDescription>
+            Drag and drop files here or click to browse. Supported formats: Images, Videos, Documents (Max 3MB per file)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div
+            className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center hover:border-muted-foreground/50 transition-colors"
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+          >
+            <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <div className="space-y-2">
+              <p className="text-lg font-medium">Drop files here to upload</p>
+              <p className="text-sm text-muted-foreground">or</p>
+              <Label htmlFor="file-upload" className="cursor-pointer">
+                <Button variant="outline" disabled={uploading}>
+                  {uploading ? "Uploading..." : "Browse Files"}
+                </Button>
                 <Input
-                  placeholder="Search files..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  id="file-upload"
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx"
+                  className="hidden"
+                  onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+                  disabled={uploading}
                 />
+              </Label>
+            </div>
+            {uploading && (
+              <div className="mt-4">
+                <div className="w-full bg-secondary rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">Uploading... {Math.round(uploadProgress)}%</p>
               </div>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-40">
-                  <Filter className="mr-2 h-4 w-4" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="image">Images</SelectItem>
-                  <SelectItem value="video">Videos</SelectItem>
-                  <SelectItem value="document">Documents</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={viewMode === "grid" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setViewMode("grid")}
-              >
-                <Grid3X3 className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === "list" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setViewMode("list")}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-            </div>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Media Grid/List */}
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      {/* Filters and Search */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+        <div className="flex flex-col sm:flex-row gap-4 flex-1">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search files..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Files</SelectItem>
+              <SelectItem value="image">Images</SelectItem>
+              <SelectItem value="video">Videos</SelectItem>
+              <SelectItem value="document">Documents</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      ) : filteredFiles.length === 0 ? (
+        <div className="flex gap-2">
+          <Button variant={viewMode === "grid" ? "default" : "outline"} size="sm" onClick={() => setViewMode("grid")}>
+            <Grid className="h-4 w-4" />
+          </Button>
+          <Button variant={viewMode === "list" ? "default" : "outline"} size="sm" onClick={() => setViewMode("list")}>
+            <List className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Files Display */}
+      {filteredFiles.length === 0 ? (
         <Card>
-          <CardContent className="p-12 text-center">
-            <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No media files found</h3>
-            <p className="text-gray-500 mb-4">
-              {searchTerm || filterType !== "all"
-                ? "Try adjusting your search or filters"
-                : "Upload your first media file to get started"}
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <FileImage className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">No files found</h3>
+            <p className="text-muted-foreground text-center">
+              {files.length === 0
+                ? "Upload your first media file to get started"
+                : "Try adjusting your search or filter criteria"}
             </p>
-            {!searchTerm && filterType === "all" && (
-              <Button onClick={() => setShowUploadDialog(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Upload Media
-              </Button>
-            )}
           </CardContent>
         </Card>
-      ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {filteredFiles.map((file) => (
-            <Card key={file.id} className="group cursor-pointer hover:shadow-md transition-shadow">
-              <CardContent className="p-0">
-                <div className="aspect-square relative overflow-hidden rounded-t-lg bg-gray-100">
-                  {file.mime_type.startsWith("image/") ? (
-                    <img
-                      src={file.thumbnail_url || file.blob_url}
-                      alt={file.original_filename}
-                      className="w-full h-full object-cover"
-                      onClick={() => setSelectedFile(file)}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      {getFileTypeIcon(file.mime_type)}
-                    </div>
-                  )}
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => setSelectedFile(file)}>
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button size="sm" variant="secondary" asChild>
-                        <a href={file.blob_url} download={file.original_filename}>
-                          <Download className="h-4 w-4" />
-                        </a>
-                      </Button>
-                      <Button size="sm" variant="destructive" onClick={() => handleDelete(file.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-3">
-                  <p className="font-medium text-sm truncate" title={file.original_filename}>
-                    {file.original_filename}
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <Badge variant="secondary" className="text-xs">
-                      {file.file_type}
-                    </Badge>
-                    <span className="text-xs text-gray-500">{formatFileSize(file.file_size)}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="divide-y">
-              {filteredFiles.map((file) => (
-                <div key={file.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center">
-                      {file.mime_type.startsWith("image/") ? (
+        <div
+          className={
+            viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" : "space-y-4"
+          }
+        >
+          {filteredFiles.map((file) => (
+            <Card key={file.id} className="group hover:shadow-md transition-shadow">
+              <CardContent className={viewMode === "grid" ? "p-4" : "p-4 flex items-center gap-4"}>
+                {viewMode === "grid" ? (
+                  <div className="space-y-3">
+                    <div className="aspect-square bg-muted rounded-lg overflow-hidden">
+                      {file.file_type === "image" && file.thumbnail_url ? (
                         <img
-                          src={file.thumbnail_url || file.blob_url}
+                          src={file.thumbnail_url || "/placeholder.svg"}
                           alt={file.original_filename}
-                          className="w-full h-full object-cover rounded-lg"
+                          className="w-full h-full object-cover cursor-pointer"
+                          onClick={() => setSelectedFile(file)}
                         />
                       ) : (
-                        getFileTypeIcon(file.mime_type)
+                        <div className="w-full h-full flex items-center justify-center">
+                          {getFileIcon(file.file_type)}
+                        </div>
                       )}
                     </div>
-                    <div>
-                      <p className="font-medium">{file.original_filename}</p>
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm truncate" title={file.original_filename}>
+                        {file.original_filename}
+                      </h4>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-xs">
+                          {file.file_type}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">{formatFileSize(file.file_size)}</span>
+                      </div>
+                      {file.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {file.tags.slice(0, 2).map((tag, index) => (
+                            <Badge key={index} variant="outline" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                          {file.tags.length > 2 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{file.tags.length - 2}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {file.file_type === "image" && (
+                        <Button size="sm" variant="outline" onClick={() => setSelectedFile(file)}>
+                          <Eye className="h-3 w-3" />
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => window.open(file.blob_url, "_blank")}>
+                        <Download className="h-3 w-3" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="outline">
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete File</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete "{file.original_filename}"? This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <DialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => deleteFile(file.id)}>Delete</AlertDialogAction>
+                          </DialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex-shrink-0">
+                      {file.file_type === "image" && file.thumbnail_url ? (
+                        <img
+                          src={file.thumbnail_url || "/placeholder.svg"}
+                          alt={file.original_filename}
+                          className="w-16 h-16 object-cover rounded cursor-pointer"
+                          onClick={() => setSelectedFile(file)}
+                        />
+                      ) : (
+                        <div className="w-16 h-16 bg-muted rounded flex items-center justify-center">
+                          {getFileIcon(file.file_type)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-medium truncate">{file.original_filename}</h4>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant="secondary" className="text-xs">
                           {file.file_type}
                         </Badge>
-                        <span className="text-sm text-gray-500">{formatFileSize(file.file_size)}</span>
-                        <span className="text-sm text-gray-500">{new Date(file.created_at).toLocaleDateString()}</span>
+                        <span className="text-sm text-muted-foreground">{formatFileSize(file.file_size)}</span>
+                        {file.width && file.height && (
+                          <span className="text-sm text-muted-foreground">
+                            {file.width}×{file.height}
+                          </span>
+                        )}
                       </div>
+                      {file.description && (
+                        <p className="text-sm text-muted-foreground mt-1 truncate">{file.description}</p>
+                      )}
+                      {file.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {file.tags.map((tag, index) => (
+                            <Badge key={index} variant="outline" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => setSelectedFile(file)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" asChild>
-                      <a href={file.blob_url} download={file.original_filename}>
+                    <div className="flex gap-2">
+                      {file.file_type === "image" && (
+                        <Button size="sm" variant="outline" onClick={() => setSelectedFile(file)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => window.open(file.blob_url, "_blank")}>
                         <Download className="h-4 w-4" />
-                      </a>
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleDelete(file.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="outline">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete File</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete "{file.original_filename}"? This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <DialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => deleteFile(file.id)}>Delete</AlertDialogAction>
+                          </DialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
-      {/* File Preview Dialog */}
-      {selectedFile && (
+      {/* Image Preview Dialog */}
+      {selectedFile && selectedFile.file_type === "image" && (
         <Dialog open={!!selectedFile} onOpenChange={() => setSelectedFile(null)}>
           <DialogContent className="max-w-4xl">
             <DialogHeader>
               <DialogTitle>{selectedFile.original_filename}</DialogTitle>
-              <DialogDescription>{selectedFile.description || "No description available"}</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              {selectedFile.mime_type.startsWith("image/") && (
-                <div className="max-h-96 overflow-hidden rounded-lg">
-                  <img
-                    src={selectedFile.blob_url || "/placeholder.svg"}
-                    alt={selectedFile.original_filename}
-                    className="w-full h-auto"
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <Label>File Type</Label>
-                  <p className="mt-1">{selectedFile.mime_type}</p>
-                </div>
-                <div>
-                  <Label>File Size</Label>
-                  <p className="mt-1">{formatFileSize(selectedFile.file_size)}</p>
-                </div>
+              <DialogDescription>
                 {selectedFile.width && selectedFile.height && (
-                  <div>
-                    <Label>Dimensions</Label>
-                    <p className="mt-1">
-                      {selectedFile.width} × {selectedFile.height}
-                    </p>
-                  </div>
+                  <span>
+                    {selectedFile.width}×{selectedFile.height} •{" "}
+                  </span>
                 )}
-                <div>
-                  <Label>Created</Label>
-                  <p className="mt-1">{new Date(selectedFile.created_at).toLocaleString()}</p>
-                </div>
-              </div>
-
-              {selectedFile.tags && selectedFile.tags.length > 0 && (
-                <div>
-                  <Label>Tags</Label>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {selectedFile.tags.map((tag, index) => (
-                      <Badge key={index} variant="outline">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" asChild>
-                  <a href={selectedFile.blob_url} download={selectedFile.original_filename}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Download
-                  </a>
-                </Button>
-                <Button variant="destructive" onClick={() => handleDelete(selectedFile.id)}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </Button>
-              </div>
+                {formatFileSize(selectedFile.file_size)} • {selectedFile.mime_type}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[70vh] overflow-auto">
+              <img
+                src={selectedFile.blob_url || "/placeholder.svg"}
+                alt={selectedFile.original_filename}
+                className="w-full h-auto"
+              />
             </div>
+            {selectedFile.description && (
+              <div className="mt-4">
+                <h4 className="font-medium mb-2">Description</h4>
+                <p className="text-sm text-muted-foreground">{selectedFile.description}</p>
+              </div>
+            )}
+            {selectedFile.tags.length > 0 && (
+              <div className="mt-4">
+                <h4 className="font-medium mb-2">Tags</h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedFile.tags.map((tag, index) => (
+                    <Badge key={index} variant="outline">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       )}

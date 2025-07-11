@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import crypto from "crypto"
+import type { NextRequest } from "next/server"
 import { userQueries, sessionQueries, auditQueries } from "./database"
 
 if (!process.env.JWT_SECRET) {
@@ -261,6 +262,19 @@ export const authService = {
       return null
     }
   },
+}
+
+export const getUserFromSession = async (request: NextRequest): Promise<User | null> => {
+  try {
+    const sessionToken = request.cookies.get("session-token")?.value
+    if (!sessionToken) {
+      return null
+    }
+    return await authService.verifySession(sessionToken)
+  } catch (error) {
+    console.error("Error getting user from session:", error)
+    return null
+  }
 }
 
 export const requireAuth = async (sessionToken?: string): Promise<User | null> => {
