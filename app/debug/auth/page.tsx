@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react"
 
 export default function AuthDebugPage() {
   const [email, setEmail] = useState("")
@@ -36,47 +35,34 @@ export default function AuthDebugPage() {
     }
   }
 
-  const getStatusIcon = (status: string) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case "success":
-        return <CheckCircle className="h-4 w-4 text-green-500" />
+        return "bg-green-500"
       case "failed":
-        return <XCircle className="h-4 w-4 text-red-500" />
-      case "testing":
-        return <Clock className="h-4 w-4 text-yellow-500" />
+        return "bg-red-500"
       case "not_found":
-        return <AlertTriangle className="h-4 w-4 text-orange-500" />
+        return "bg-yellow-500"
+      case "testing":
+        return "bg-blue-500"
       default:
-        return null
+        return "bg-gray-500"
     }
-  }
-
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      success: "default",
-      failed: "destructive",
-      testing: "secondary",
-      not_found: "outline",
-    } as const
-
-    return (
-      <Badge variant={variants[status as keyof typeof variants] || "secondary"}>
-        {status.replace("_", " ").toUpperCase()}
-      </Badge>
-    )
   }
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Authentication Debug Tool</h1>
-        <p className="text-muted-foreground">Test each step of the authentication process to identify issues</p>
+        <p className="text-gray-600">
+          This tool helps diagnose authentication issues by testing each step of the login process.
+        </p>
       </div>
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Test Credentials</CardTitle>
-          <CardDescription>Enter the email and password you're trying to authenticate with</CardDescription>
+          <CardTitle>Test Authentication</CardTitle>
+          <CardDescription>Enter credentials to test the authentication flow</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -112,12 +98,13 @@ export default function AuthDebugPage() {
       {results && (
         <div className="space-y-6">
           {results.error ? (
-            <Alert variant="destructive">
-              <XCircle className="h-4 w-4" />
+            <Alert>
               <AlertDescription>
-                <strong>Debug Test Failed:</strong> {results.details}
-                {results.stack && (
-                  <pre className="mt-2 text-xs overflow-x-auto bg-muted p-2 rounded">{results.stack}</pre>
+                <strong>Error:</strong> {results.error}
+                {results.details && (
+                  <div className="mt-2">
+                    <strong>Details:</strong> {results.details}
+                  </div>
                 )}
               </AlertDescription>
             </Alert>
@@ -128,26 +115,26 @@ export default function AuthDebugPage() {
                   <CardTitle>Environment Check</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div className="flex items-center space-x-2">
-                      {results.environment.hasJwtSecret ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-red-500" />
-                      )}
-                      <span className="text-sm">JWT Secret</span>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="font-medium">JWT Secret:</span>{" "}
+                      <Badge variant={results.environment.hasJwtSecret ? "default" : "destructive"}>
+                        {results.environment.hasJwtSecret ? "Present" : "Missing"}
+                      </Badge>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {results.environment.hasDatabaseUrl ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-red-500" />
-                      )}
-                      <span className="text-sm">Database URL</span>
+                    <div>
+                      <span className="font-medium">Database URL:</span>{" "}
+                      <Badge variant={results.environment.hasDatabaseUrl ? "default" : "destructive"}>
+                        {results.environment.hasDatabaseUrl ? "Present" : "Missing"}
+                      </Badge>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div>
+                      <span className="font-medium">Environment:</span>{" "}
                       <Badge variant="outline">{results.environment.nodeEnv}</Badge>
-                      <span className="text-sm">Environment</span>
+                    </div>
+                    <div>
+                      <span className="font-medium">Timestamp:</span>{" "}
+                      <span className="text-sm text-gray-600">{results.timestamp}</span>
                     </div>
                   </div>
                 </CardContent>
@@ -163,55 +150,36 @@ export default function AuthDebugPage() {
                     {results.steps.map((step: any, index: number) => (
                       <div key={index} className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center space-x-2">
-                            {getStatusIcon(step.status)}
-                            <h3 className="font-medium">
-                              Step {step.step}: {step.name}
-                            </h3>
-                          </div>
-                          {getStatusBadge(step.status)}
+                          <h3 className="font-medium">
+                            Step {step.step}: {step.name}
+                          </h3>
+                          <Badge className={getStatusColor(step.status)}>{step.status}</Badge>
                         </div>
 
                         {step.result && (
-                          <div className="mt-3">
-                            <h4 className="text-sm font-medium mb-2">Result:</h4>
-                            <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
+                          <div className="mt-2">
+                            <h4 className="font-medium text-sm mb-1">Result:</h4>
+                            <pre className="bg-gray-100 p-2 rounded text-xs overflow-x-auto">
                               {JSON.stringify(step.result, null, 2)}
                             </pre>
                           </div>
                         )}
 
                         {step.error && (
-                          <div className="mt-3">
-                            <Alert variant="destructive">
-                              <XCircle className="h-4 w-4" />
-                              <AlertDescription>
-                                <strong>Error:</strong> {step.error}
-                                {step.stack && (
-                                  <pre className="mt-2 text-xs overflow-x-auto bg-muted p-2 rounded">{step.stack}</pre>
-                                )}
-                              </AlertDescription>
-                            </Alert>
+                          <div className="mt-2">
+                            <h4 className="font-medium text-sm mb-1 text-red-600">Error:</h4>
+                            <div className="bg-red-50 p-2 rounded text-sm text-red-700">{step.error}</div>
                           </div>
+                        )}
+
+                        {step.stack && (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-sm font-medium">Stack Trace</summary>
+                            <pre className="bg-gray-100 p-2 rounded text-xs mt-1 overflow-x-auto">{step.stack}</pre>
+                          </details>
                         )}
                       </div>
                     ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Test Summary</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-sm text-muted-foreground">
-                    <p>Test completed at: {new Date(results.timestamp).toLocaleString()}</p>
-                    <p>Email tested: {results.email}</p>
-                    <p>
-                      Steps passed: {results.steps.filter((s: any) => s.status === "success").length} /{" "}
-                      {results.steps.length}
-                    </p>
                   </div>
                 </CardContent>
               </Card>

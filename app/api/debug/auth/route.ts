@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       debugResults.steps[debugResults.steps.length - 1].error = error instanceof Error ? error.message : "Unknown error"
     }
 
-    // Step 5: Session creation test (only if user found)
+    // Step 5: Session creation test (only if user found) - Fixed to use correct table
     if (debugResults.steps[1]?.result?.userFound) {
       try {
         debugResults.steps.push({

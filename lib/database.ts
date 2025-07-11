@@ -99,13 +99,13 @@ export const userQueries = {
   },
 }
 
-// Session queries
+// Session queries - Fixed to use 'sessions' table instead of 'user_sessions'
 export const sessionQueries = {
   create: async (userId: string, sessionToken: string, expiresAt: Date) => {
     const result = await sql`
-      INSERT INTO user_sessions (user_id, session_token, expires_at)
+      INSERT INTO sessions (user_id, token, expires_at)
       VALUES (${userId}, ${sessionToken}, ${expiresAt.toISOString()})
-      RETURNING id, session_token, expires_at
+      RETURNING id, token, expires_at
     `
     return result[0]
   },
@@ -117,10 +117,10 @@ export const sessionQueries = {
         u.id, u.email, u.first_name, u.last_name, u.role, u.is_email_verified,
         u.business_name, u.business_address, u.phone, u.avatar_url, u.created_at,
         p.name as plan_name, p.max_screens, p.max_storage_gb, p.max_playlists
-      FROM user_sessions s
+      FROM sessions s
       JOIN users u ON s.user_id = u.id
       LEFT JOIN plans p ON u.plan_id = p.id
-      WHERE s.session_token = ${sessionToken} 
+      WHERE s.token = ${sessionToken} 
         AND s.expires_at > CURRENT_TIMESTAMP
         AND u.is_active = true
     `
@@ -128,7 +128,7 @@ export const sessionQueries = {
   },
 
   delete: async (sessionToken: string) => {
-    await sql`DELETE FROM user_sessions WHERE session_token = ${sessionToken}`
+    await sql`DELETE FROM sessions WHERE token = ${sessionToken}`
   },
 }
 
