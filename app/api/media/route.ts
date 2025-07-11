@@ -32,9 +32,9 @@ export async function GET(request: NextRequest) {
       ORDER BY created_at DESC
     `
 
-    return NextResponse.json(result)
+    return NextResponse.json({ files: result })
   } catch (error) {
-    console.error("Error fetching media:", error)
+    console.error("Error fetching media files:", error)
     return NextResponse.json({ error: "Failed to fetch media files" }, { status: 500 })
   }
 }

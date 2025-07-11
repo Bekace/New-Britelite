@@ -1,137 +1,289 @@
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
-import { sql } from "./database"
+import crypto from "crypto"
 import type { NextRequest } from "next/server"
+import { userQueries, sessionQueries, auditQueries } from "./database"
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key"
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET environment variable is required")
+}
+
+const JWT_SECRET = process.env.JWT_SECRET
+const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 export interface User {
   id: string
   email: string
   first_name: string
   last_name: string
-  role: string
-  is_active: boolean
-  is_verified: boolean
-  created_at: string
-  updated_at: string
+  role: "user" | "admin"
+  is_email_verified: boolean
+  plan_id?: string
+  plan_name?: string
+  max_screens?: number
+  max_storage_gb?: number
+  max_playlists?: number
+  business_name?: string
+  business_address?: string
+  phone?: string
+  avatar_url?: string
 }
 
-export interface Session {
-  id: string
-  user_id: string
-  token: string
-  expires_at: string
-  created_at: string
-  updated_at: string
+export interface AuthResult {
+  success: boolean
+  user?: User
+  token?: string
+  message?: string
+  error?: string
+  verificationToken?: string
 }
 
-export const authService = {
-  async hashPassword(password: string): Promise<string> {
-    return bcrypt.hash(password, 12)
+export const passwordUtils = {
+  hash: async (password: string): Promise<string> => {
+    return await bcrypt.hash(password, 12)
   },
 
-  async verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
-    return bcrypt.compare(password, hashedPassword)
+  verify: async (password: string, hash: string): Promise<boolean> => {
+    return await bcrypt.compare(password, hash)
   },
 
-  generateToken(payload: any): string {
+  validate: (password: string): { valid: boolean; errors: string[] } => {
+    const errors: string[] = []
+
+    if (password.length < 8) {
+      errors.push("Password must be at least 8 characters long")
+    }
+    if (!/[A-Z]/.test(password)) {
+      errors.push("Password must contain at least one uppercase letter")
+    }
+    if (!/[a-z]/.test(password)) {
+      errors.push("Password must contain at least one lowercase letter")
+    }
+    if (!/\d/.test(password)) {
+      errors.push("Password must contain at least one number")
+    }
+
+    return { valid: errors.length === 0, errors }
+  },
+}
+
+export const tokenUtils = {
+  generateSessionToken: (): string => {
+    return crypto.randomBytes(32).toString("hex")
+  },
+
+  generateEmailToken: (): string => {
+    return crypto.randomBytes(32).toString("hex")
+  },
+
+  generateJWT: (payload: any): string => {
     return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" })
   },
 
-  verifyToken(token: string): any {
+  verifyJWT: (token: string): any => {
     try {
       return jwt.verify(token, JWT_SECRET)
     } catch (error) {
       return null
     }
   },
+}
 
-  async createSession(userId: string): Promise<Session> {
-    const token = this.generateToken({ userId })
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+export const authService = {
+  register: async (data: {
+    email: string
+    password: string
+    first_name: string
+    last_name: string
+    business_name?: string
+  }): Promise<AuthResult> => {
+    try {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(data.email)) {
+        return { success: false, error: "Invalid email format" }
+      }
 
-    const result = await sql`
-      INSERT INTO sessions (user_id, token, expires_at)
-      VALUES (${userId}, ${token}, ${expiresAt})
-      RETURNING *
-    `
+      const passwordValidation = passwordUtils.validate(data.password)
+      if (!passwordValidation.valid) {
+        return { success: false, error: passwordValidation.errors.join(", ") }
+      }
 
-    return result[0] as Session
+      const existingUser = await userQueries.findByEmail(data.email)
+      if (existingUser) {
+        return { success: false, error: "User with this email already exists" }
+      }
+
+      const passwordHash = await passwordUtils.hash(data.password)
+      const emailVerificationToken = tokenUtils.generateEmailToken()
+
+      const user = await userQueries.create({
+        email: data.email,
+        password_hash: passwordHash,
+        first_name: data.first_name,
+        last_name: data.last_name,
+        business_name: data.business_name,
+        email_verification_token: emailVerificationToken,
+      })
+
+      await auditQueries.log({
+        user_id: user.id,
+        action: "user_registered",
+        details: { email: data.email },
+      })
+
+      return {
+        success: true,
+        user: user as User,
+        verificationToken: emailVerificationToken,
+        message: "Registration successful. Please check your email to verify your account.",
+      }
+    } catch (error) {
+      console.error("Registration error:", error)
+      return { success: false, error: "Registration failed. Please try again." }
+    }
   },
 
-  async verifySession(token: string): Promise<User | null> {
+  login: async (email: string, password: string): Promise<AuthResult> => {
     try {
-      const result = await sql`
-        SELECT u.*, s.expires_at
-        FROM users u
-        JOIN sessions s ON u.id = s.user_id
-        WHERE s.token = ${token} AND s.expires_at > NOW() AND u.is_active = true
-      `
+      console.log("Login attempt for email:", email)
 
-      if (result.length === 0) {
+      const user = await userQueries.findByEmail(email)
+      if (!user) {
+        console.log("User not found for email:", email)
+        return { success: false, error: "Invalid email or password" }
+      }
+
+      console.log("User found, verifying password...")
+      const isValidPassword = await passwordUtils.verify(password, user.password_hash)
+      if (!isValidPassword) {
+        console.log("Invalid password for user:", email)
+        return { success: false, error: "Invalid email or password" }
+      }
+
+      console.log("Password valid, creating session...")
+      const sessionToken = tokenUtils.generateSessionToken()
+      const expiresAt = new Date(Date.now() + SESSION_DURATION)
+
+      await sessionQueries.create(user.id, sessionToken, expiresAt)
+
+      const {
+        password_hash,
+        email_verification_token,
+        password_reset_token,
+        password_reset_expires,
+        ...userWithoutSensitiveData
+      } = user
+
+      console.log("Login successful for user:", email)
+      return {
+        success: true,
+        user: userWithoutSensitiveData as User,
+        token: sessionToken,
+        message: "Login successful",
+      }
+    } catch (error) {
+      console.error("Login error:", error)
+      return { success: false, error: "Login failed. Please try again." }
+    }
+  },
+
+  verifyEmail: async (token: string): Promise<AuthResult> => {
+    try {
+      if (!token) {
+        return { success: false, error: "Verification token is required" }
+      }
+
+      const user = await userQueries.updateEmailVerification(token)
+      if (!user) {
+        return { success: false, error: "Invalid or expired verification token" }
+      }
+
+      await auditQueries.log({
+        user_id: user.id,
+        action: "email_verified",
+        details: { email: user.email },
+      })
+
+      return {
+        success: true,
+        message: "Email verified successfully! You can now sign in to your account.",
+      }
+    } catch (error) {
+      console.error("Email verification error:", error)
+      return { success: false, error: "Email verification failed. Please try again." }
+    }
+  },
+
+  requestPasswordReset: async (email: string): Promise<AuthResult> => {
+    try {
+      const user = await userQueries.findByEmail(email)
+      if (!user) {
+        // Return success even if user doesn't exist for security
+        return { success: true, message: "If an account exists, a reset link has been sent." }
+      }
+
+      const resetToken = tokenUtils.generateEmailToken()
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+      await userQueries.setPasswordResetToken(email, resetToken, expiresAt)
+
+      await auditQueries.log({
+        user_id: user.id,
+        action: "password_reset_requested",
+        details: { email },
+      })
+
+      return { success: true, message: "Password reset link sent to your email." }
+    } catch (error) {
+      console.error("Password reset request error:", error)
+      return { success: false, error: "Failed to process password reset request." }
+    }
+  },
+
+  logout: async (sessionToken: string): Promise<void> => {
+    try {
+      await sessionQueries.delete(sessionToken)
+    } catch (error) {
+      console.error("Logout error:", error)
+    }
+  },
+
+  verifySession: async (sessionToken: string): Promise<User | null> => {
+    try {
+      const session = await sessionQueries.findByToken(sessionToken)
+      if (!session) {
         return null
       }
 
-      const { expires_at, ...user } = result[0]
+      const { password_hash, email_verification_token, password_reset_token, password_reset_expires, ...user } = session
       return user as User
     } catch (error) {
       console.error("Session verification error:", error)
       return null
     }
   },
-
-  async deleteSession(token: string): Promise<void> {
-    await sql`
-      DELETE FROM sessions WHERE token = ${token}
-    `
-  },
-
-  async getUserById(id: string): Promise<User | null> {
-    try {
-      const result = await sql`
-        SELECT * FROM users WHERE id = ${id} AND is_active = true
-      `
-
-      if (result.length === 0) {
-        return null
-      }
-
-      return result[0] as User
-    } catch (error) {
-      console.error("Get user error:", error)
-      return null
-    }
-  },
-
-  async getUserByEmail(email: string): Promise<User | null> {
-    try {
-      const result = await sql`
-        SELECT * FROM users WHERE email = ${email} AND is_active = true
-      `
-
-      if (result.length === 0) {
-        return null
-      }
-
-      return result[0] as User
-    } catch (error) {
-      console.error("Get user by email error:", error)
-      return null
-    }
-  },
 }
 
-export async function getUserFromSession(request: NextRequest): Promise<User | null> {
+export const getUserFromSession = async (request: NextRequest): Promise<User | null> => {
   try {
-    const token = request.cookies.get("session")?.value
-    if (!token) {
+    const sessionToken = request.cookies.get("session-token")?.value
+    if (!sessionToken) {
       return null
     }
-
-    return await authService.verifySession(token)
+    return await authService.verifySession(sessionToken)
   } catch (error) {
-    console.error("Get user from session error:", error)
+    console.error("Error getting user from session:", error)
     return null
   }
+}
+
+export const requireAuth = async (sessionToken?: string): Promise<User | null> => {
+  if (!sessionToken) {
+    return null
+  }
+  return await authService.verifySession(sessionToken)
+}
+
+export const requireAdmin = (user: User | null): boolean => {
+  return user?.role === "admin"
 }

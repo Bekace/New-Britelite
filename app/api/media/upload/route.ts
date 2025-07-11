@@ -1,8 +1,23 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { put } from "@vercel/blob"
+import sharp from "sharp"
 import { getUserFromSession } from "@/lib/auth"
 import { sql } from "@/lib/database"
-import sharp from "sharp"
+
+const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
+const ALLOWED_TYPES = {
+  "image/jpeg": "image",
+  "image/png": "image",
+  "image/gif": "image",
+  "image/webp": "image",
+  "video/mp4": "video",
+  "video/webm": "video",
+  "video/quicktime": "video",
+  "application/pdf": "document",
+  "application/msword": "document",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
+  "text/plain": "document",
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,25 +33,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    // Validate file size (3MB limit)
-    const maxSize = 3 * 1024 * 1024
-    if (file.size > maxSize) {
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json({ error: "File size exceeds 3MB limit" }, { status: 400 })
     }
 
     // Validate file type
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-      "video/mp4",
-      "video/webm",
-      "application/pdf",
-      "text/plain",
-    ]
-    if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: "Unsupported file type" }, { status: 400 })
+    const fileType = ALLOWED_TYPES[file.type as keyof typeof ALLOWED_TYPES]
+    if (!fileType) {
+      return NextResponse.json({ error: "File type not supported" }, { status: 400 })
     }
 
     // Generate unique filename
@@ -55,7 +60,7 @@ export async function POST(request: NextRequest) {
     let height: number | null = null
 
     // Generate thumbnail for images
-    if (file.type.startsWith("image/")) {
+    if (fileType === "image") {
       try {
         const buffer = await file.arrayBuffer()
         const imageBuffer = Buffer.from(buffer)
@@ -71,7 +76,8 @@ export async function POST(request: NextRequest) {
           .jpeg({ quality: 80 })
           .toBuffer()
 
-        const thumbnailBlob = await put(`thumb-${filename}`, thumbnailBuffer, {
+        const thumbnailFilename = `thumb-${filename.replace(/\.[^/.]+$/, ".jpg")}`
+        const thumbnailBlob = await put(thumbnailFilename, thumbnailBuffer, {
           access: "public",
           contentType: "image/jpeg",
         })
@@ -100,7 +106,7 @@ export async function POST(request: NextRequest) {
         ${user.id},
         ${filename},
         ${file.name},
-        ${file.type},
+        ${fileType},
         ${file.size},
         ${file.type},
         ${blob.url},
@@ -111,9 +117,13 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `
 
-    return NextResponse.json(result[0])
+    return NextResponse.json({
+      success: true,
+      file: result[0],
+      message: "File uploaded successfully",
+    })
   } catch (error) {
-    console.error("Error uploading file:", error)
+    console.error("Upload error:", error)
     return NextResponse.json({ error: "Failed to upload file" }, { status: 500 })
   }
 }

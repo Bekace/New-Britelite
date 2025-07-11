@@ -42,14 +42,17 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       WHERE id = ${id} AND user_id = ${user.id}
     `
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      message: "File deleted successfully",
+    })
   } catch (error) {
-    console.error("Error deleting file:", error)
+    console.error("Delete error:", error)
     return NextResponse.json({ error: "Failed to delete file" }, { status: 500 })
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getUserFromSession(request)
     if (!user) {
@@ -57,36 +60,30 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 
     const { id } = params
+    const body = await request.json()
+    const { description, tags } = body
 
     const result = await sql`
-      SELECT 
-        id,
-        filename,
-        original_filename,
-        file_type,
-        file_size,
-        mime_type,
-        blob_url,
-        thumbnail_url,
-        duration,
-        width,
-        height,
-        tags,
-        description,
-        is_active,
-        created_at,
-        updated_at
-      FROM media 
-      WHERE id = ${id} AND user_id = ${user.id} AND is_active = true
+      UPDATE media 
+      SET 
+        description = ${description || null},
+        tags = ${tags || null},
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${id} AND user_id = ${user.id}
+      RETURNING *
     `
 
     if (result.length === 0) {
       return NextResponse.json({ error: "File not found" }, { status: 404 })
     }
 
-    return NextResponse.json(result[0])
+    return NextResponse.json({
+      success: true,
+      file: result[0],
+      message: "File updated successfully",
+    })
   } catch (error) {
-    console.error("Error fetching file:", error)
-    return NextResponse.json({ error: "Failed to fetch file" }, { status: 500 })
+    console.error("Update error:", error)
+    return NextResponse.json({ error: "Failed to update file" }, { status: 500 })
   }
 }
