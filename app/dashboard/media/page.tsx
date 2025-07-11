@@ -144,6 +144,13 @@ export default function MediaPage() {
     }
   }
 
+  const handleBrowseClick = () => {
+    const fileInput = document.getElementById("file-upload") as HTMLInputElement
+    if (fileInput) {
+      fileInput.click()
+    }
+  }
+
   const handleDragOver = (event: React.DragEvent) => {
     event.preventDefault()
   }
@@ -255,11 +262,9 @@ export default function MediaPage() {
             <div className="space-y-2">
               <p className="text-lg font-medium">Drop files here to upload</p>
               <p className="text-sm text-muted-foreground">Supports images, videos, and documents</p>
-              <Label htmlFor="file-upload" className="cursor-pointer">
-                <Button variant="outline" disabled={uploading}>
-                  {uploading ? "Uploading..." : "Browse Files"}
-                </Button>
-              </Label>
+              <Button variant="outline" disabled={uploading} onClick={handleBrowseClick}>
+                {uploading ? "Uploading..." : "Browse Files"}
+              </Button>
               <Input
                 id="file-upload"
                 type="file"
