@@ -47,6 +47,7 @@ import {
   File,
   Link,
   Presentation,
+  Edit,
 } from "lucide-react"
 
 interface MediaFile {
@@ -80,8 +81,12 @@ export default function MediaPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [selectedFile, setSelectedFile] = useState<MediaFile | null>(null)
   const [deleteFile, setDeleteFile] = useState<MediaFile | null>(null)
+  const [editFile, setEditFile] = useState<MediaFile | null>(null)
   const [googleSlidesUrl, setGoogleSlidesUrl] = useState("")
   const [addingGoogleSlides, setAddingGoogleSlides] = useState(false)
+  const [editDescription, setEditDescription] = useState("")
+  const [editTags, setEditTags] = useState("")
+  const [saving, setSaving] = useState(false)
 
   const fetchFiles = useCallback(async () => {
     try {
@@ -219,6 +224,63 @@ export default function MediaPage() {
       })
     } finally {
       setAddingGoogleSlides(false)
+    }
+  }
+
+  const handleEditFile = (file: MediaFile) => {
+    setEditFile(file)
+    setEditDescription(file.description || "")
+    setEditTags(file.tags ? file.tags.join(", ") : "")
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editFile) return
+
+    setSaving(true)
+
+    try {
+      const tagsArray = editTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0)
+
+      const response = await fetch(`/api/media/${editFile.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          description: editDescription.trim() || null,
+          tags: tagsArray.length > 0 ? tagsArray : null,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to update file")
+      }
+
+      const result = await response.json()
+
+      // Update the file in the list
+      setFiles((prev) => prev.map((file) => (file.id === editFile.id ? result.file : file)))
+
+      setEditFile(null)
+      setEditDescription("")
+      setEditTags("")
+
+      toast({
+        title: "Success",
+        description: "File updated successfully",
+      })
+    } catch (error) {
+      console.error("Edit error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update file",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -626,6 +688,10 @@ export default function MediaPage() {
                         </DialogTrigger>
                       </Dialog>
 
+                      <Button variant="outline" size="sm" onClick={() => handleEditFile(file)}>
+                        <Edit className="h-3 w-3" />
+                      </Button>
+
                       {file.file_type !== "google-slides" && (
                         <Button variant="outline" size="sm" asChild>
                           <a href={file.blob_url} download={file.original_filename}>
@@ -709,6 +775,10 @@ export default function MediaPage() {
                           </Button>
                         </DialogTrigger>
                       </Dialog>
+
+                      <Button variant="outline" size="sm" onClick={() => handleEditFile(file)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
 
                       {file.file_type !== "google-slides" && (
                         <Button variant="outline" size="sm" asChild>
@@ -864,6 +934,54 @@ export default function MediaPage() {
                     {selectedFile.file_type === "google-slides" ? "Google Slides" : selectedFile.mime_type}
                   </p>
                 </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Edit File Dialog */}
+      {editFile && (
+        <Dialog open={!!editFile} onOpenChange={() => setEditFile(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit File</DialogTitle>
+              <DialogDescription>Update the description and tags for "{editFile.original_filename}"</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-description">Description</Label>
+                <Textarea
+                  id="edit-description"
+                  placeholder="Enter a description for this file..."
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  disabled={saving}
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-tags">Tags</Label>
+                <Input
+                  id="edit-tags"
+                  placeholder="Enter tags separated by commas (e.g., logo, brand, marketing)"
+                  value={editTags}
+                  onChange={(e) => setEditTags(e.target.value)}
+                  disabled={saving}
+                  className="mt-1"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Separate multiple tags with commas</p>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setEditFile(null)} disabled={saving}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveEdit} disabled={saving}>
+                  {saving ? "Saving..." : "Save Changes"}
+                </Button>
               </div>
             </div>
           </DialogContent>
